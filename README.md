@@ -163,6 +163,40 @@ Create named API keys (beyond the master key) with individual rate limits and sc
 
 ---
 
+## Architecture — why one tool per instance
+
+MCPetty implements the **STRAP pattern** (Single Tool Resource Action Pattern). Instead of exposing every action as a separate tool, each installed MCP instance appears as a single tool in your agent's context. All actions are routed through it via `{ action, args }`.
+
+### The problem it solves
+
+Without MCPetty, connecting multiple services exposes the raw tool lists to your agent directly. Portainer alone has **39 tools**. WikiJS has **18**. Add Proxmox (30), Wazuh (57), and a second Portainer instance, and you're at **183 tools** before the conversation even starts.
+
+This causes real, documented problems:
+- **Tool calling accuracy drops** as tool count grows — the decline starts at surprisingly low numbers
+- **Context bloat** — each tool's name, description, and JSON schema consumes tokens every turn. 50+ tools can burn 55K+ tokens of context permanently. Cursor hard-caps at 40 tools for this reason.
+- **Name collisions** — Portainer has `list_users`. WikiJS has `list_users`. With raw tool exposure, the agent guesses which one you mean.
+
+With MCPetty, the agent sees **one tool per instance**: `portainer-prod`, `wikijs-home`, `proxmox-dc1`. Two Portainer instances = two tools. The entire Portainer tool list (39 actions) is encoded into one tool's description and schema. The name collision problem disappears because `portainer-prod.list_users` and `wikijs-home.list_users` live in completely separate tool namespaces.
+
+### How the schema is built
+
+Each platform tool has:
+- `action` — a strict `enum` of every enabled action name. The agent cannot pass an action that doesn't exist.
+- `args` — an object containing the typed union of all possible argument properties across all actions. Each property carries its type and description from the original handler definition. `additionalProperties: false` blocks garbage fields.
+- The description encodes every action's signature inline: `action_name: what it does [args: field*(type): description, ...]`. The `*` marks required args.
+
+This is more typed than a pure untyped blob but is not a full per-action discriminated union (`oneOf`). The tradeoff: the schema doesn't enforce *which* args a specific action requires — that constraint lives in the description text that the agent reads. Modern reasoning models handle this well; the strict `enum` on `action` and typed `args` properties do most of the heavy lifting.
+
+### Known tradeoffs
+
+- **Retry cost** — if the agent passes wrong args for an action, the server rejects the call and the agent must retry. With a large args union, this is less common than with a fully untyped blob, but not impossible.
+- **Description length** — packing 39 action signatures into one tool description is long. Agents with attention issues on long tool descriptions may miss constraints for edge-case actions.
+- **Not RAG-MCP** — the current cutting edge is dynamic tool injection (retrieve only the 3-5 relevant tools per query via semantic search, 3x accuracy improvement). MCPetty doesn't do this yet. STRAP is the pragmatic middle ground: far better than raw exposure, simpler to implement and operate than RAG-MCP.
+
+The community landed on STRAP independently across multiple projects (MetaMCP, 1MCP, Docker MCP Gateway). MCPetty's implementation adds typed args and description-encoded signatures on top of the base pattern.
+
+---
+
 ## How to add an MCP
 
 Want a service that isn't supported yet? Two paths:

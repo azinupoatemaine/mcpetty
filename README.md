@@ -165,16 +165,16 @@ Create named API keys (beyond the master key) with individual rate limits and sc
 
 ## Architecture — why one tool per instance
 
-MCPetty implements the **STRAP pattern** (Single Tool Resource Action Pattern). Instead of exposing every action as a separate tool, each installed MCP instance appears as a single tool in your agent's context. All actions are routed through it via `{ action, args }`.
+MCPetty implements the **STRAP pattern** (Single Tool Resource Action Pattern) [[1]](https://almatuck.com/articles/reduced-mcp-tools-96-to-10-strap-pattern). Instead of exposing every action as a separate tool, each installed MCP instance appears as a single tool in your agent's context. All actions are routed through it via `{ action, args }`.
 
 ### The problem it solves
 
 Without MCPetty, connecting multiple services exposes the raw tool lists to your agent directly. Portainer alone has **39 tools**. WikiJS has **18**. Add Proxmox (30), Wazuh (57), and a second Portainer instance, and you're at **183 tools** before the conversation even starts.
 
 This causes real, documented problems:
-- **Tool calling accuracy drops** as tool count grows — the decline starts at surprisingly low numbers
-- **Context bloat** — each tool's name, description, and JSON schema consumes tokens every turn. 50+ tools can burn 55K+ tokens of context permanently. Cursor hard-caps at 40 tools for this reason.
-- **Name collisions** — Portainer has `list_users`. WikiJS has `list_users`. With raw tool exposure, the agent guesses which one you mean.
+- **Tool calling accuracy drops** as tool count grows — the decline starts at surprisingly low numbers [[2]](https://dev.to/nebulagg/mcp-tool-overload-why-more-tools-make-your-agent-worse-5a49)
+- **Context bloat** — each tool's name, description, and JSON schema consumes tokens every turn. 50+ tools can burn 55K+ tokens of context permanently. Cursor hard-caps at 40 tools for this reason [[3]](https://scottspence.com/posts/optimising-mcp-server-context-usage-in-claude-code)
+- **Name collisions** — Portainer has `list_users`. WikiJS has `list_users`. With raw tool exposure, the agent guesses which one you mean. This is a recognised anti-pattern [[4]](https://jentic.com/blog/the-mcp-tool-trap)
 
 With MCPetty, the agent sees **one tool per instance**: `portainer-prod`, `wikijs-home`, `proxmox-dc1`. Two Portainer instances = two tools. The entire Portainer tool list (39 actions) is encoded into one tool's description and schema. The name collision problem disappears because `portainer-prod.list_users` and `wikijs-home.list_users` live in completely separate tool namespaces.
 
@@ -190,10 +190,10 @@ This is more typed than a pure untyped blob but is not a full per-action discrim
 ### Known tradeoffs
 
 - **Retry cost** — if the agent passes wrong args for an action, the server rejects the call and the agent must retry. With a large args union, this is less common than with a fully untyped blob, but not impossible.
-- **Description length** — packing 39 action signatures into one tool description is long. Agents with attention issues on long tool descriptions may miss constraints for edge-case actions.
-- **Not RAG-MCP** — the current cutting edge is dynamic tool injection (retrieve only the 3-5 relevant tools per query via semantic search, 3x accuracy improvement). MCPetty doesn't do this yet. STRAP is the pragmatic middle ground: far better than raw exposure, simpler to implement and operate than RAG-MCP.
+- **Description length** — packing 39 action signatures into one tool description is long. Research on MCP fault taxonomies identifies "tool description smells" — overly dense descriptions where agents miss constraints for edge-case actions [[5]](https://arxiv.org/html/2504.07946v1).
+- **Not RAG-MCP** — the current cutting edge is dynamic tool injection: retrieve only the 3-5 relevant tools per query via semantic search, yielding up to 3x accuracy improvement [[6]](https://arxiv.org/html/2505.03275v1). MCPetty doesn't do this yet. STRAP is the pragmatic middle ground — far better than raw exposure, simpler to implement and operate than RAG-MCP.
 
-The community landed on STRAP independently across multiple projects (MetaMCP, 1MCP, Docker MCP Gateway). MCPetty's implementation adds typed args and description-encoded signatures on top of the base pattern.
+The community landed on STRAP independently across multiple projects: [MetaMCP](https://github.com/metatool-ai/metamcp), [1MCP](https://www.npmjs.com/package/@1mcp/agent), Docker MCP Gateway. MCPetty's implementation adds typed args and description-encoded signatures on top of the base pattern.
 
 ---
 

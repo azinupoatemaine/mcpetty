@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0a;
+  --card: #111111;
+  --border: #1e1e1e;
+  --border2: #2a2a2a;
+  --text: #ffffff;
+  --muted: #9a9a9a;
+  --dim: #555555;
+  --dim2: #333333;
+  --green: #39ff14;
+  --red: #ff4444;
+  --yellow: #ffd700;
+  --flag-danger-bg: #1a0a0a;
+  --flag-warning-bg: #1a1400;
+  --flag-info-bg: #0a0a1a;
+  --flag-info-border: #444444;
+  --flag-info-text: #888888;
+  --tint-green-bg: #0a1a0a;
+  --tint-green-border: #1a3a1a;
+  --info-box-bg: #080f08;
+  --info-box-border: #1a3a1a;
+  --toggle-off-bg: #222222;
+  --toggle-off-dot: #555555;
+}
+
+:root.light {
+  --bg: #f5f5f5;
+  --card: #ffffff;
+  --border: #e0e0e0;
+  --border2: #d0d0d0;
+  --text: #0a0a0a;
+  --muted: #555555;
+  --dim: #999999;
+  --dim2: #cccccc;
+  --green: #16a34a;
+  --red: #dc2626;
+  --yellow: #ca8a04;
+  --flag-danger-bg: #fff0f0;
+  --flag-warning-bg: #fffceb;
+  --flag-info-bg: #f0f4ff;
+  --flag-info-border: #cccccc;
+  --flag-info-text: #666666;
+  --tint-green-bg: #f0fff4;
+  --tint-green-border: #86efac;
+  --info-box-bg: #f0fdf4;
+  --info-box-border: #bbf7d0;
+  --toggle-off-bg: #d1d5db;
+  --toggle-off-dot: #9ca3af;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', Courier, monospace;
+  margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+}

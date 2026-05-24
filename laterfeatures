@@ -1,0 +1,16 @@
+Uptime Kuma integration
+-----------------------
+Add a public /api/health endpoint (no auth) that pings all installed MCP instances.
+Returns 200 + JSON status for the overall gateway, 503 if any instance is down.
+Per-instance: /api/health?id=portainer-prod → 200 or 503.
+
+The problem with the simple HTTP approach: user has to manually add one Uptime Kuma monitor
+per MCP instance, which doesn't scale.
+
+Better approach to investigate:
+- MCPetty auto-generates the Uptime Kuma monitor config (bulk import via Uptime Kuma's
+  backup/import JSON format) so the user just imports one file and gets all monitors at once.
+- Or: MCPetty calls the Uptime Kuma API directly to create/delete monitors when instances
+  are installed/uninstalled. Uptime Kuma has an undocumented but stable REST API + socket.io API.
+  Credential needed: Uptime Kuma URL + username/password or API key.
+  This would make monitoring fully automatic — install a Portainer instance, monitor appears.

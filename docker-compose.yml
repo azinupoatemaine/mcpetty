@@ -1,0 +1,11 @@
+services:
+  mcpetty:
+    image: ghcr.io/azinupoatemaine/mcpetty:latest
+    ports:
+      - "1234:1234"
+    volumes:
+      - mcpetty-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  mcpetty-data:

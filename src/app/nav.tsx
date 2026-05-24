@@ -1,0 +1,89 @@
+'use client'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+
+const LOGO = `███╗   ███╗ ██████╗██████╗ ███████╗████████╗████████╗██╗   ██╗
+████╗ ████║██╔════╝██╔══██╗██╔════╝╚══██╔══╝╚══██╔══╝╚██╗ ██╔╝
+██╔████╔██║██║     ██████╔╝█████╗     ██║      ██║    ╚████╔╝
+██║╚██╔╝██║██║     ██╔═══╝ ██╔══╝     ██║      ██║     ╚██╔╝
+██║ ╚═╝ ██║╚██████╗██║     ███████╗   ██║      ██║      ██║
+╚═╝     ╚═╝ ╚═════╝╚═╝     ╚══════╝   ╚═╝      ╚═╝      ╚═╝`
+
+const TABS = [
+  ['Dashboard', '/'],
+  ['Library',   '/library'],
+  ['Insights',  '/insights'],
+  ['Gateways',  '/gateways'],
+  ['Settings',  '/settings'],
+] as const
+
+type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Gateways' | 'Settings'
+
+const VERSION = 'v1.05'
+
+export function Footer({ motto }: { motto: string }) {
+  return (
+    <div style={{ marginTop: 64, borderTop: '1px solid var(--border)', paddingTop: 16, color: 'var(--dim)', fontSize: 11, display: 'flex', justifyContent: 'space-between' }}>
+      <span>MCPetty {VERSION} — built by someone who had better things to do</span>
+      <span>{motto}</span>
+    </div>
+  )
+}
+
+export function Nav({ active }: { active?: ActiveTab }) {
+  const [light, setLight] = useState(false)
+
+  useEffect(() => {
+    setLight(document.documentElement.classList.contains('light'))
+  }, [])
+
+  function toggleTheme() {
+    const next = !light
+    setLight(next)
+    document.documentElement.classList.toggle('light', next)
+    localStorage.setItem('theme', next ? 'light' : 'dark')
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <pre style={{ color: 'var(--green)', fontSize: 'clamp(5px, 1.1vw, 11px)', lineHeight: 1.2, marginBottom: 8, overflow: 'hidden', textShadow: '0 0 10px var(--green)', margin: 0 }}>
+          {LOGO}
+        </pre>
+        <button
+          onClick={toggleTheme}
+          title={light ? 'Switch to dark mode' : 'Switch to light mode'}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--muted)', fontSize: 16, padding: '4px 8px', cursor: 'pointer', fontFamily: 'monospace', flexShrink: 0, marginLeft: 12, lineHeight: 1 }}
+        >
+          {light ? '☾' : '☀'}
+        </button>
+      </div>
+      <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 4, marginTop: 8 }}>The Ultimate BottleNeck.</div>
+      <div style={{ color: 'var(--dim)', fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
+        Proudly serving as the front door to a server stack held together by a single unshielded ethernet cable and your tears.
+      </div>
+      <div style={{ borderBottom: '1px solid var(--border)', marginBottom: 28 }}>
+        {TABS.map(([label, href]) => (
+          <Link
+            key={href}
+            href={href}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: `2px solid ${label === active ? 'var(--green)' : 'transparent'}`,
+              color: label === active ? 'var(--green)' : 'var(--dim)',
+              fontSize: 12,
+              padding: '8px 16px',
+              cursor: label === active ? 'default' : 'pointer',
+              fontFamily: 'monospace',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+    </>
+  )
+}

@@ -104,7 +104,7 @@ function InjectionSection({ raw }: { raw: Record<string, string> }) {
   ]
 
   return (
-    <Section title="Prompt Injection Detection" sub="Scans tool outputs for patterns that could manipulate Claude before it reads them.">
+    <Section title="Prompt Injection Detection" sub="Scans tool outputs for patterns that could manipulate your AI agent before it reads them.">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <Toggle on={on} onChange={setOn} />
         <span style={{ color: on ? S.green : S.dim, fontSize: 12 }}>{on ? 'enabled' : 'disabled'}</span>
@@ -313,7 +313,7 @@ function MetaMCPSection() {
   }
 
   return (
-    <Section title="MCPetty Meta MCP" sub="Exposes a read-only MCP tool so Claude can query MCPetty itself — status, call history, error patterns, sessions.">
+    <Section title="MCPetty Meta MCP" sub="Exposes a read-only MCP tool so your AI agent can query MCPetty itself — status, call history, error patterns, sessions.">
       {installed === null ? (
         <div style={{ color: S.dim, fontSize: 12 }}>loading...</div>
       ) : (

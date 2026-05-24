@@ -7,9 +7,11 @@
 ╚═╝     ╚═╝ ╚═════╝╚═╝     ╚══════╝   ╚═╝      ╚═╝      ╚═╝
 ```
 
-**The Ultimate BottleNeck.** Self-hosted MCP gateway and dashboard for your homelab.
+**Self-hosted MCP gateway and dashboard for your homelab.**
 
-One Docker container. All your MCPs through one endpoint. All credentials encrypted in SQLite. No env vars required.
+MCPetty is a single Docker container that sits between your AI agent and all your self-hosted services. Install MCPs through the dashboard, connect your agent to one endpoint, and it can reach everything — Portainer, Proxmox, WikiJS, Home Assistant, and more. All credentials stay on your machine, encrypted at rest. Works with any MCP-compatible AI agent: Claude, GPT, Gemini, local models via Ollama — anything that speaks the Model Context Protocol.
+
+One container. One endpoint. All your services.
 
 ---
 
@@ -55,15 +57,15 @@ Change these immediately.
 | **Wazuh** | Agents, alerts, vulnerabilities, SCA, FIM, active response | Native |
 | **Home Assistant** | Smart home control, automations, media players, scenes | HTTP Proxy |
 
-**Multi-instance**: every MCP type can be installed multiple times with different credentials. Two Portainer servers, three WikiJS instances — each appears as its own tool in Claude.
+**Multi-instance**: every MCP type can be installed multiple times with different credentials. Two Portainer servers, three WikiJS instances — each appears as its own tool to your agent.
 
-**Instance tags**: each instance can have up to 3 tags (e.g. `[Infrastructure]`, `[Homelab]`). Tags are injected as a prefix in the tool's description so Claude can route by category or location before even looking at available actions. Set them from each server card — existing tags appear as quick-select chips.
+**Instance tags**: each instance can have up to 3 tags (e.g. `[Infrastructure]`, `[Homelab]`). Tags are injected as a prefix in the tool's description so the agent can route by category or location before even looking at available actions. Set them from each server card — existing tags appear as quick-select chips.
 
 ---
 
-## Connecting Claude
+## Connecting your agent
 
-The dashboard **Gateway Endpoint** section shows a ready-to-copy command:
+The dashboard **Gateway Endpoint** section shows a ready-to-copy command. For Claude Code:
 
 ```bash
 claude mcp add mcpetty http://your-host:1234/mcp \
@@ -71,7 +73,9 @@ claude mcp add mcpetty http://your-host:1234/mcp \
   --header "Authorization: Bearer <your-api-key>"
 ```
 
-All installed MCPs appear as a single server. Claude sees one tool per installed instance — `portainer-prod`, `wikijs-home`, `proxmox-dc1`. Each tool accepts `{ action, args }`.
+For any other MCP-compatible agent, point it at `http://your-host:1234/mcp` with the Bearer token in the `Authorization` header.
+
+All installed MCPs appear as a single server. Your agent sees one tool per installed instance — `portainer-prod`, `wikijs-home`, `proxmox-dc1`. Each tool accepts `{ action, args }`.
 
 ```json
 { "action": "list_stacks", "args": {} }
@@ -87,10 +91,10 @@ Derived from your master secret via HKDF. Stable across restarts. Changes only i
 ## Dashboard
 
 - **Server cards** — online/offline status, latency, security flags, credential management, tool list
-- **Instance tags** — up to 3 tags per instance, shown as `[tag]` chips next to the server name. Injected as a prefix in the tool description Claude reads when routing. Useful for category (`[Infrastructure]`) and location (`[DC1]`) signals.
+- **Instance tags** — up to 3 tags per instance, shown as `[tag]` chips next to the server name. Injected as a prefix in the tool description the agent reads when routing. Useful for category (`[Infrastructure]`) and location (`[DC1]`) signals.
 - **Mini feed** — each card shows the last 5 tool calls, collapsed by default. Outcome, action, latency, relative timestamp.
-- **Tool access** — enable/disable individual tools per instance. Disabled tools are hidden from Claude entirely.
-- **Description overrides** — edit what Claude sees as a tool's description directly in the UI, per tool per instance. Overrides are injected live into the gateway schema.
+- **Tool access** — enable/disable individual tools per instance. Disabled tools are hidden from the agent entirely.
+- **Description overrides** — edit what the agent sees as a tool's description directly in the UI, per tool per instance. Overrides are injected live into the gateway schema.
 - **Charts** — latency bars and tool count per server; online/total ring
 
 ---
@@ -105,17 +109,17 @@ Five tabs of observability. All data comes from the tool call log — every call
 | **Sessions** | Per MCP session: wall-clock duration, call count, platforms used, caller. Expand a session to see every call in order with offsets, args, and results. |
 | **Errors** | Smart-grouped error patterns. Similar errors (same message with different IPs/ports/IDs) are folded into one card with a total count. Expand to see raw variants. |
 | **Heatmap** | 7×24 call density grid — day of week × hour of day (UTC). |
-| **Callers** | User-agent breakdown. Identifies Claude Code, Claude Desktop, claude.ai. Includes a UA × platform matrix. |
+| **Callers** | User-agent breakdown. Identifies Claude Code, Claude Desktop, claude.ai, and others. Includes a UA × platform matrix. |
 
 ---
 
 ## Settings
 
 ### Tool Output Cache
-Returns identical calls from memory. Cache key = `platform + action + args`. Claude is told the result is cached and how many seconds remain. Bypass with `nocache: true` in the call args. TTL: 1–120 seconds.
+Returns identical calls from memory. Cache key = `platform + action + args`. The agent is told the result is cached and how many seconds remain. Bypass with `nocache: true` in the call args. TTL: 1–120 seconds.
 
 ### Prompt Injection Detection
-Scans every tool response for patterns that could manipulate Claude. Configurable extra patterns on top of the built-in set. Suspicious responses are prefixed with a warning before Claude reads them.
+Scans every tool response for patterns that could manipulate your AI agent. Configurable extra patterns on top of the built-in set. Suspicious responses are prefixed with a warning before the agent reads them.
 
 ### n8n Webhook
 Fires a POST to your n8n endpoint when specified tools are called. Trigger filter supports `platform:action` or `platform:*` patterns. Payload includes action, args, outcome, latency, and result preview.
@@ -127,7 +131,7 @@ Replaces specified argument key names (e.g. `token`, `password`) with `[REDACTED
 Limit calls per named gateway in a configurable time window. Master key is always unlimited.
 
 ### Meta MCP
-Toggle that installs MCPetty itself as a read-only MCP tool. Lets Claude query MCPetty — installed servers, call history, error patterns, sessions — without leaving the conversation. Actions: `get_status`, `get_insights_summary`, `get_recent_calls`, `get_error_patterns`, `get_top_actions`, `get_sessions`.
+Toggle that installs MCPetty itself as a read-only MCP tool. Lets your AI agent query MCPetty — installed servers, call history, error patterns, sessions — without leaving the conversation. Actions: `get_status`, `get_insights_summary`, `get_recent_calls`, `get_error_patterns`, `get_top_actions`, `get_sessions`.
 
 ### Changelog
 Read-only audit trail of every config change — installs, uninstalls, credential rotations, tool filter edits, gateway changes. Filterable by 7/30/90 days.
@@ -136,7 +140,7 @@ Read-only audit trail of every config change — installs, uninstalls, credentia
 
 ## Named Gateways
 
-Create named API keys (beyond the master key) with individual rate limits and scoped access. Useful for giving separate keys to different Claude projects or team members without sharing the master key.
+Create named API keys (beyond the master key) with individual rate limits and scoped access. Useful for giving separate keys to different agent projects or team members without sharing the master key.
 
 - **Instance scope** — explicitly assign which MCP instances a key can reach.
 - **Action scope** — per-gateway tool overrides. Restrict a key to specific actions on each instance.
@@ -159,25 +163,13 @@ Create named API keys (beyond the master key) with individual rate limits and sc
 
 ---
 
-## Developer guide — adding a new MCP
+## How to add an MCP
 
-**Always prefer native transport.** If the external MCP is just wrapping a REST/GraphQL API, replicate those calls in TypeScript. No subprocess, no Dockerfile change, no port.
+Want a service that isn't supported yet? Two paths:
 
-```
-src/lib/native/myservice.ts   ← handler (tools, ping, call)
-src/lib/native/index.ts       ← register in NATIVE map
-src/lib/mcp-catalog.ts        ← add catalog entry
-```
+**Build it yourself** — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide: how to fork, which files to touch, the mandatory handler template, and how to open a PR. The guide is written to be followable whether you're an experienced developer or just getting started.
 
-Three transport types:
-
-| Transport | Use when | Dockerfile |
-|---|---|---|
-| `native` | Anything wrapping a REST/GraphQL API | No change |
-| `http` | Subprocess listening on an internal HTTP port | `RUN npm install -g <package>` |
-| `stdio` | Subprocess speaking JSON-RPC over stdin/stdout | Add binary download |
-
-See `CLAUDE.md` for the full native handler template and architecture notes.
+**Open an issue** — no experience required. Describe the service you need and what you'd use it for. I'll implement it as fast as I can.
 
 ---
 

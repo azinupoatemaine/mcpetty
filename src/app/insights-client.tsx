@@ -845,7 +845,7 @@ export default function InsightsClient() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <div style={{ color: S.text, fontSize: 18, fontWeight: 'bold' }}>Insights</div>
-          <div style={{ color: S.dim, fontSize: 12, marginTop: 2 }}>What Claude actually did with your MCPs</div>
+          <div style={{ color: S.dim, fontSize: 12, marginTop: 2 }}>What your AI agents actually did with your MCPs</div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {data && data.perPlatform.length > 1 && (

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticate, SESSION_COOKIE } from '../../../../lib/auth'
+import { withActor } from '../../../../lib/audit'
+import { writeAuditEvent, mustChangePassword } from '../../../../lib/db'
 
 const loginAttempts = new Map<string, number[]>()
 const RL_WINDOW     = 15 * 60 * 1000  // 15 min
@@ -31,10 +33,18 @@ export async function POST(req: NextRequest) {
 
   const token = authenticate(String(username), String(password))
   if (!token) {
+    withActor({ actorType: 'user', actorId: String(username).slice(0, 64) }, () => {
+      writeAuditEvent('login_failure', String(username).slice(0, 64), { ip })
+    })
     return NextResponse.json({ error: 'Wrong credentials. Try harder.' }, { status: 401 })
   }
 
-  const res = NextResponse.json({ ok: true })
+  withActor({ actorType: 'user', actorId: String(username) }, () => {
+    writeAuditEvent('login_success', String(username), { ip })
+  })
+
+  const requirePasswordChange = mustChangePassword(String(username))
+  const res = NextResponse.json({ ok: true, requirePasswordChange })
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: false,

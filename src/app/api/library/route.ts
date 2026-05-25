@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { CATALOG, findCatalogEntry } from '../../../lib/mcp-catalog'
 import { installMCP, uninstallMCP, getInstancesByType, credentialStatus, setCredential, slugify, uniqueInstanceId } from '../../../lib/db'
 import { startMCP, stopMCP } from '../../../lib/process-manager'
-import { isAuthorizedRequest } from '../../../lib/auth'
+import { isAuthorizedRequest, getSessionUsernameFromRequest } from '../../../lib/auth'
+import { withActor } from '../../../lib/audit'
+import { writeAuditEvent } from '../../../lib/db'
 import { NATIVE } from '../../../lib/native'
 import { broadcastNotification } from '../../../lib/sse-bus'
 
@@ -60,6 +62,10 @@ export async function POST(req: NextRequest) {
   startMCP(instanceId, type, entry.internalPort ?? 0)
   broadcastNotification({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
 
+  withActor({ actorType: 'user', actorId: getSessionUsernameFromRequest(req) }, () => {
+    writeAuditEvent('mcp_install', instanceId, { type, name: instanceName || type })
+  })
+
   return NextResponse.json({ ok: true, instanceId })
 }
 
@@ -70,6 +76,9 @@ export async function DELETE(req: NextRequest) {
   const instanceId = req.nextUrl.searchParams.get('instanceId')
   if (!instanceId) return NextResponse.json({ error: 'instanceId required' }, { status: 400 })
 
+  withActor({ actorType: 'user', actorId: getSessionUsernameFromRequest(req) }, () => {
+    writeAuditEvent('mcp_uninstall', instanceId)
+  })
   stopMCP(instanceId)
   uninstallMCP(instanceId)
   broadcastNotification({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { findCatalogEntry } from '../../../lib/mcp-catalog'
 import { setCredential, deleteCredential, credentialStatus, getInstalledMCPs } from '../../../lib/db'
-import { isAuthorizedRequest } from '../../../lib/auth'
+import { isAuthorizedRequest, getSessionUsernameFromRequest } from '../../../lib/auth'
+import { withActor } from '../../../lib/audit'
+import { writeAuditEvent } from '../../../lib/db'
 
 function resolveType(instanceId: string, typeId?: string | null): string | null {
   if (typeId) return typeId
@@ -44,6 +46,9 @@ export async function POST(req: NextRequest) {
 
   try {
     setCredential(instanceId, key, value)
+    withActor({ actorType: 'user', actorId: getSessionUsernameFromRequest(req) }, () => {
+      writeAuditEvent('credential_set', instanceId, { key })
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json(
@@ -62,5 +67,8 @@ export async function DELETE(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key')
   if (!id || !key) return NextResponse.json({ error: 'instanceId and key required' }, { status: 400 })
   deleteCredential(id, key)
+  withActor({ actorType: 'user', actorId: getSessionUsernameFromRequest(req) }, () => {
+    writeAuditEvent('credential_delete', id, { key })
+  })
   return NextResponse.json({ ok: true })
 }

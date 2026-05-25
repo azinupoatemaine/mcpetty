@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAuthorizedRequest } from '../../../lib/auth'
+import { isAuthorizedRequest, getSessionUsernameFromRequest } from '../../../lib/auth'
+import { withActor } from '../../../lib/audit'
+import { writeAuditEvent } from '../../../lib/db'
 import { getSettingsMap, setSettings, getAllRateLimits, setRateLimit, deleteRateLimit, listGateways } from '../../../lib/db'
 
 export async function GET(req: NextRequest) {
@@ -19,7 +21,11 @@ export async function POST(req: NextRequest) {
     deleteRateLimit?:   string
   }
 
-  if (body.settings)       setSettings(body.settings)
+  const actor = { actorType: 'user' as const, actorId: getSessionUsernameFromRequest(req) }
+  if (body.settings) {
+    setSettings(body.settings)
+    withActor(actor, () => { writeAuditEvent('settings_change', 'settings', { keys: Object.keys(body.settings!) }) })
+  }
   if (body.setRateLimit)   setRateLimit(body.setRateLimit.gatewayId, body.setRateLimit.maxCalls, body.setRateLimit.windowSecs)
   if (body.deleteRateLimit) deleteRateLimit(body.deleteRateLimit)
 

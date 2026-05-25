@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAuthorizedRequest } from '../../../lib/auth'
+import { isAuthorizedRequest, getSessionUsernameFromRequest } from '../../../lib/auth'
+import { withActor } from '../../../lib/audit'
+import { writeAuditEvent } from '../../../lib/db'
 import { listNamespaces, createNamespace } from '../../../lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +21,9 @@ export async function POST(req: NextRequest) {
   if (!slug) return NextResponse.json({ error: 'Invalid slug — use lowercase letters, numbers, hyphens' }, { status: 400 })
   try {
     const ns = createNamespace(slug, name.trim())
+    withActor({ actorType: 'user', actorId: getSessionUsernameFromRequest(req) }, () => {
+      writeAuditEvent('namespace_create', slug, { name: name.trim() })
+    })
     return NextResponse.json(ns)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to create namespace'

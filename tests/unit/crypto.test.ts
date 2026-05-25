@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { encrypt, decrypt, hashGatewayKey, getGatewayApiKey } from '../../src/lib/crypto'
+import { encrypt, decrypt, hashGatewayKey } from '../../src/lib/crypto'
 
 describe('encrypt / decrypt', () => {
   it('round-trips plaintext', () => {
@@ -76,16 +76,3 @@ describe('hashGatewayKey', () => {
   })
 })
 
-describe('getGatewayApiKey', () => {
-  it('is stable across calls', () => {
-    expect(getGatewayApiKey()).toBe(getGatewayApiKey())
-  })
-
-  it('is base64url (no +, /, or = characters)', () => {
-    expect(getGatewayApiKey()).toMatch(/^[A-Za-z0-9_-]+$/)
-  })
-
-  it('is 32+ characters', () => {
-    expect(getGatewayApiKey().length).toBeGreaterThanOrEqual(32)
-  })
-})

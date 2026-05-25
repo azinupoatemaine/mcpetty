@@ -15,9 +15,10 @@ const TABS = [
   ['Insights',   '/insights'],
   ['Namespaces', '/gateways'],
   ['Settings',   '/settings'],
+  ['Audit',      '/audit'],
 ] as const
 
-type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Namespaces' | 'Settings'
+type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Namespaces' | 'Settings' | 'Audit'
 
 export { type ActiveTab }
 

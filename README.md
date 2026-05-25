@@ -154,6 +154,38 @@ Read-only audit trail of every config change — installs, uninstalls, credentia
 
 ---
 
+## Audit Log
+
+Separate from the Changelog. Immutable, per-actor, HMAC-SHA256 hash chain. Accessible at the **Audit** tab.
+
+Every write operation is recorded with who did it, what they did, and what it affected. The actor is resolved from the request context — `user/<username>` for dashboard sessions, `gateway/<id>` for API key calls, `system` for internal operations.
+
+**Covered events:**
+
+| Category | Events |
+|---|---|
+| Auth | `login_success`, `login_failure`, `logout` |
+| MCP lifecycle | `mcp_install`, `mcp_uninstall` |
+| Credentials | `credential_set`, `credential_delete` |
+| Gateways | `gateway_create`, `gateway_delete`, `gateway_rename`, `gateway_rotate_key` |
+| Namespaces | `namespace_create`, `namespace_delete`, `namespace_rename`, `namespace_key_add`, `namespace_key_delete` |
+| Config | `settings_change` |
+| Approvals | `approval_decided` |
+
+**Hash chain:** each entry's `chain_hash` is `HMAC-SHA256(masterKey, JSON([prevHash, actorType, actorId, eventType, subject, detailJson, timestamp]))`. The first entry chains from a genesis hash derived from the master secret. The chain is anchored to this installation — it cannot be regenerated without the master key.
+
+**Tamper detection:** any row deletion, modification, or insertion in the middle breaks the chain. The dashboard banner shows `✓ chain intact · N entries` or `✗ chain broken at entry #ID`. Verify programmatically:
+
+```bash
+GET /api/audit-log/verify
+# → { "ok": true, "total": 42 }
+# → { "ok": false, "firstBrokenId": 17, "total": 42 }
+```
+
+The audit log table has no UPDATE or DELETE paths in the application — only INSERT via a serialised transaction that reads the previous hash and writes the new one atomically.
+
+---
+
 ## Named Gateways
 
 Create named API keys (beyond the master key) with individual rate limits and scoped access. Useful for giving separate keys to different agent projects or team members without sharing the master key.
@@ -213,6 +245,7 @@ The diff is shown once per session per unique call signature. Subsequent calls i
 | Path traversal | `safeSeg()` blocks traversal in URL segments for Proxmox operations |
 | Webhook | Loopback and link-local addresses blocked; RFC1918 allowed |
 | Named gateway keys | HMAC-SHA256 hashed with master key before storage |
+| Audit log | Immutable hash chain — HMAC-SHA256 per entry, chained from genesis, anchored to master key |
 
 ---
 

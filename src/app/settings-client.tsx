@@ -493,6 +493,92 @@ function RateLimitsSection({ gateways, rateLimits: initial }: { gateways: Gatewa
   )
 }
 
+// ─── Change password section ──────────────────────────────────────────────────
+
+function ChangePasswordSection() {
+  const [current,    setCurrent]    = useState('')
+  const [next,       setNext]       = useState('')
+  const [confirm,    setConfirm]    = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [msg,        setMsg]        = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    setMsg(null)
+    if (next !== confirm) { setMsg({ ok: false, text: 'Passwords do not match.' }); return }
+    if (next.length < 8)  { setMsg({ ok: false, text: 'Minimum 8 characters.' }); return }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      })
+      if (res.ok) {
+        setMsg({ ok: true, text: 'Password changed. You will be logged out.' })
+        setCurrent(''); setNext(''); setConfirm('')
+        setTimeout(() => { window.location.href = '/login' }, 1500)
+      } else {
+        const data = await res.json()
+        setMsg({ ok: false, text: data.error || 'Failed.' })
+      }
+    } finally { setSaving(false) }
+  }
+
+  const inp: React.CSSProperties = { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none', boxSizing: 'border-box' }
+
+  return (
+    <Section title="Change Password" sub="Changing password logs out all active sessions.">
+      <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 360 }}>
+        <div>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>Current Password</div>
+          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} style={inp} />
+        </div>
+        <div>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>New Password</div>
+          <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} style={inp} placeholder="min 8 characters" />
+        </div>
+        <div>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>Confirm New Password</div>
+          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} style={inp} />
+        </div>
+        {msg && (
+          <div style={{ background: msg.ok ? '#0a1a0a' : '#1a0a0a', border: `1px solid ${msg.ok ? S.green : S.red}`, borderRadius: 4, padding: '7px 10px', color: msg.ok ? S.green : S.red, fontSize: 12 }}>
+            {msg.text}
+          </div>
+        )}
+        <div>
+          <button type="submit" disabled={saving || !current || !next || !confirm}
+            style={{ background: S.green, color: '#000', border: 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving || !current || !next || !confirm ? 'not-allowed' : 'pointer', borderRadius: 4, opacity: !current || !next || !confirm ? 0.5 : 1 }}>
+            {saving ? 'saving...' : 'change password'}
+          </button>
+        </div>
+      </form>
+    </Section>
+  )
+}
+
+// ─── Allowed origins section ──────────────────────────────────────────────────
+
+function AllowedOriginsSection({ raw }: { raw: Record<string, string> }) {
+  const [origins, setOrigins] = useState(raw.allowed_origins ?? '')
+  const { saving, saved, save } = useSave()
+
+  return (
+    <Section title="Allowed Origins" sub="Hostnames allowed in the Origin header when accessing the /mcp gateway from a browser. One per line. Default (empty): 127.0.0.1 and localhost only.">
+      <textarea
+        value={origins}
+        onChange={(e) => setOrigins(e.target.value)}
+        placeholder={'127.0.0.1\nlocalhost\n192.168.1.10'}
+        rows={4}
+        style={{ width: '100%', background: S.bg, border: '1px solid var(--border)', color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical', marginBottom: 12 }}
+      />
+      <SaveBtn saving={saving} saved={saved} onClick={() => save({ settings: {
+        allowed_origins: origins.split('\n').map((s) => s.trim()).filter(Boolean).join(','),
+      }})} />
+    </Section>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsClient() {
@@ -523,6 +609,8 @@ export default function SettingsClient() {
       ) : (
         <>
           <MetaMCPSection />
+          <ChangePasswordSection />
+          <AllowedOriginsSection raw={data.settings} />
           <InjectionSection  raw={data.settings} />
           <WebhookSection    raw={data.settings} />
           <CacheSection      raw={data.settings} />

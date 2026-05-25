@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getGatewayApiKey } from '../../lib/crypto'
+import { getMasterGatewayKey } from '../../lib/db'
 import {
   checkOrigin, checkProtocolVersion,
   createMasterScope, handleMcpPost, handleMcpGet, handleMcpDelete,
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 function authorized(req: NextRequest): boolean {
   const auth = req.headers.get('authorization') ?? ''
-  return auth.startsWith('Bearer ') && auth.slice(7) === getGatewayApiKey()
+  return auth.startsWith('Bearer ') && auth.slice(7) === getMasterGatewayKey()
 }
 
 export async function POST(req: NextRequest) {

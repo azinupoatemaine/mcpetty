@@ -9,10 +9,11 @@ const S = {
 }
 
 interface GatewayRecord {
-  id:          string
-  name:        string
-  createdAt:   number
-  instanceIds: string[]
+  id:            string
+  name:          string
+  createdAt:     number
+  instanceIds:   string[]
+  contextPrefix: string
 }
 
 interface InstalledInstance {
@@ -184,14 +185,17 @@ function GatewayCard({
   onChanged: () => void
   onKeyRevealed: (otk: OneTimeKey) => void
 }) {
-  const [expanded, setExpanded]   = useState(false)
-  const [renaming, setRenaming]   = useState(false)
-  const [newName, setNewName]     = useState(gw.name)
-  const [assigned, setAssigned]   = useState<string[]>(gw.instanceIds)
+  const [expanded, setExpanded]     = useState(false)
+  const [renaming, setRenaming]     = useState(false)
+  const [newName, setNewName]       = useState(gw.name)
+  const [assigned, setAssigned]     = useState<string[]>(gw.instanceIds)
   const [savingInst, setSavingInst] = useState(false)
   const [savedInst,  setSavedInst]  = useState(false)
   const [dupName,    setDupName]    = useState(`${gw.name} copy`)
   const [dupOpen,    setDupOpen]    = useState(false)
+  const [ctxPrefix,  setCtxPrefix]  = useState(gw.contextPrefix ?? '')
+  const [ctxSaving,  setCtxSaving]  = useState(false)
+  const [ctxSaved,   setCtxSaved]   = useState(false)
 
   async function rename() {
     if (!newName.trim() || newName.trim() === gw.name) { setRenaming(false); return }
@@ -235,6 +239,17 @@ function GatewayCard({
     setSavingInst(false); setSavedInst(true)
     setTimeout(() => setSavedInst(false), 2000)
     onChanged()
+  }
+
+  async function saveCtxPrefix() {
+    setCtxSaving(true)
+    await fetch('/api/gateways', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: gw.id, contextPrefix: ctxPrefix }),
+    })
+    setCtxSaving(false); setCtxSaved(true)
+    setTimeout(() => setCtxSaved(false), 2000)
   }
 
   function toggleInstance(instId: string) {
@@ -342,6 +357,35 @@ function GatewayCard({
             >
               {savedInst ? '✓ saved' : savingInst ? 'saving...' : 'save instance access'}
             </button>
+          </div>
+
+          {/* Agent context prefix */}
+          <div style={{ marginTop: 20, borderTop: `1px solid ${S.border}`, paddingTop: 16 }}>
+            <div style={{ color: S.muted, fontSize: 12, fontWeight: 'bold', marginBottom: 4 }}>Agent context</div>
+            <div style={{ color: S.dim, fontSize: 11, marginBottom: 10, lineHeight: 1.5 }}>
+              Prepended to every tool response through this gateway. Steers agent behaviour without touching system prompts.
+            </div>
+            <textarea
+              value={ctxPrefix}
+              onChange={(e) => setCtxPrefix(e.target.value)}
+              onBlur={saveCtxPrefix}
+              rows={4}
+              placeholder='e.g. This is the PRODUCTION environment. Treat all destructive operations as irreversible. Always confirm before deleting.'
+              style={{ width: '100%', boxSizing: 'border-box', background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '8px 10px', fontFamily: 'monospace', fontSize: 12, borderRadius: 4, outline: 'none', resize: 'vertical', lineHeight: 1.5 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+              <span style={{ color: ctxPrefix.length > 500 ? S.yellow : S.dim, fontSize: 10 }}>
+                {ctxPrefix.length} chars · ~{Math.ceil(ctxPrefix.length / 4)} tokens per response
+                {ctxPrefix.length > 500 && ' — large prefix adds overhead to every response'}
+              </span>
+              <button
+                onClick={saveCtxPrefix}
+                disabled={ctxSaving}
+                style={{ background: ctxSaved ? 'var(--tint-green-bg)' : S.green, color: ctxSaved ? S.green : '#000', border: ctxSaved ? `1px solid ${S.green}` : 'none', padding: '4px 14px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 11, cursor: ctxSaving ? 'not-allowed' : 'pointer', borderRadius: 3 }}
+              >
+                {ctxSaved ? '✓ saved' : ctxSaving ? 'saving...' : 'save'}
+              </button>
+            </div>
           </div>
         </div>
       )}

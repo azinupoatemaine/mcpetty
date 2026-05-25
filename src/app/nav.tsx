@@ -19,6 +19,8 @@ const TABS = [
 
 type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Gateways' | 'Settings'
 
+export { type ActiveTab }
+
 const VERSION = 'v1.05'
 
 export function Footer({ motto }: { motto: string }) {
@@ -30,7 +32,7 @@ export function Footer({ motto }: { motto: string }) {
   )
 }
 
-export function Nav({ active }: { active?: ActiveTab }) {
+export function Nav({ active, approvalCount, onApprovalsClick }: { active?: ActiveTab; approvalCount?: number; onApprovalsClick?: () => void }) {
   const [light, setLight] = useState(false)
 
   useEffect(() => {
@@ -62,27 +64,38 @@ export function Nav({ active }: { active?: ActiveTab }) {
       <div style={{ color: 'var(--dim)', fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
         Proudly serving as the front door to a server stack held together by a single unshielded ethernet cable and your tears.
       </div>
-      <div style={{ borderBottom: '1px solid var(--border)', marginBottom: 28 }}>
-        {TABS.map(([label, href]) => (
-          <Link
-            key={href}
-            href={href}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: `2px solid ${label === active ? 'var(--green)' : 'transparent'}`,
-              color: label === active ? 'var(--green)' : 'var(--dim)',
-              fontSize: 12,
-              padding: '8px 16px',
-              cursor: label === active ? 'default' : 'pointer',
-              fontFamily: 'monospace',
-              textDecoration: 'none',
-              display: 'inline-block',
-            }}
+      <div style={{ borderBottom: '1px solid var(--border)', marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          {TABS.map(([label, href]) => (
+            <Link
+              key={href}
+              href={href}
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: `2px solid ${label === active ? 'var(--green)' : 'transparent'}`,
+                color: label === active ? 'var(--green)' : 'var(--dim)',
+                fontSize: 12,
+                padding: '8px 16px',
+                cursor: label === active ? 'default' : 'pointer',
+                fontFamily: 'monospace',
+                textDecoration: 'none',
+                display: 'inline-block',
+              }}
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
+        {(approvalCount ?? 0) > 0 && onApprovalsClick && (
+          <button
+            onClick={onApprovalsClick}
+            style={{ background: 'none', border: '1px solid var(--red)', borderRadius: 4, color: 'var(--red)', fontSize: 11, padding: '3px 10px', cursor: 'pointer', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}
           >
-            {label}
-          </Link>
-        ))}
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', animation: 'pulse 1.4s ease-in-out infinite', display: 'inline-block' }} />
+            {approvalCount} pending approval{approvalCount !== 1 ? 's' : ''}
+          </button>
+        )}
       </div>
     </>
   )

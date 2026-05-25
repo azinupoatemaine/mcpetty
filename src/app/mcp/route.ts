@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomBytes } from 'crypto'
-import { getInstalledMCPs, isToolEnabled, isToolEnabledForGateway, findGatewayByKeyHash, getGatewayInstances, getCredential, logToolCall, getRateLimit, getSettingsMap, getDescriptionOverrides } from '../../lib/db'
+import { randomBytes, createHash } from 'crypto'
+import { getInstalledMCPs, isToolEnabled, isToolEnabledForGateway, findGatewayByKeyHash, getGatewayInstances, getCredential, logToolCall, getRateLimit, getSettingsMap, getDescriptionOverrides, matchesApprovalRule, createApprovalRequest, getApprovalRequest, storeApprovalResult, getActionSnapshot, setActionSnapshot, isDiffShown, markDiffShown, logSchemaTokens } from '../../lib/db'
 import { findCatalogEntry } from '../../lib/mcp-catalog'
 import { initSession, listTools, callTool, MCPTool } from '../../lib/mcp-client'
 import { NATIVE } from '../../lib/native'
@@ -116,7 +116,7 @@ function checkOrigin(req: NextRequest): boolean {
   }
 }
 
-type GatewayCtx = { id: string; name: string; instanceIds: string[] } | null
+type GatewayCtx = { id: string; name: string; instanceIds: string[]; contextPrefix: string } | null
 
 function resolveGateway(req: NextRequest): GatewayCtx | false {
   const auth = req.headers.get('authorization') ?? ''
@@ -126,7 +126,7 @@ function resolveGateway(req: NextRequest): GatewayCtx | false {
   const hash = hashGatewayKey(key)
   const gw = findGatewayByKeyHash(hash)
   if (!gw) return false
-  return { id: gw.id, name: gw.name, instanceIds: getGatewayInstances(gw.id) }
+  return { id: gw.id, name: gw.name, instanceIds: getGatewayInstances(gw.id), contextPrefix: gw.contextPrefix }
 }
 
 // ── Fix #2: Protocol version validation ───────────────────────────────────────
@@ -170,7 +170,8 @@ function buildPlatformTool(id: string, type: string, name: string, description: 
       if (!allArgProps[k]) allArgProps[k] = v
     }
   }
-  if (!allArgProps['token']) allArgProps['token'] = { type: 'string', description: 'Pagination token from next_page_token field of a previous response' }
+  if (!allArgProps['token'])       allArgProps['token']       = { type: 'string', description: 'Pagination token from next_page_token field of a previous response' }
+  if (!allArgProps['approval_id']) allArgProps['approval_id'] = { type: 'string', description: 'Approval ID returned with APPROVAL_REQUIRED' }
 
   // Encode per-action signatures in description so the model knows what args each action expects
   const actionLines = enabled.map((t) => {
@@ -186,6 +187,7 @@ function buildPlatformTool(id: string, type: string, name: string, description: 
   })
 
   actionLines.push('get_page: Fetch the next page of a large result — call when a response includes next_page_token [args: token*(string): the next_page_token value]')
+  actionLines.push('check_approval: Poll the status of a pending approval request [args: approval_id*(string): the ID returned with APPROVAL_REQUIRED]')
 
   const hasArgProps = Object.keys(allArgProps).length > 0
 
@@ -195,7 +197,7 @@ function buildPlatformTool(id: string, type: string, name: string, description: 
     inputSchema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: [...enabled.map((t) => t.name), 'get_page'] },
+        action: { type: 'string', enum: [...enabled.map((t) => t.name), 'get_page', 'check_approval'] },
         args: hasArgProps
           ? { type: 'object', properties: allArgProps, additionalProperties: false }
           : { type: 'object', properties: {}, additionalProperties: false },
@@ -342,7 +344,18 @@ export async function POST(req: NextRequest) {
   }
 
   if (method === 'tools/list') {
-    return rpcOk(id, { tools: await collectPlatforms(gateway) })
+    const tools = await collectPlatforms(gateway)
+    try {
+      const breakdown: Record<string, number> = {}
+      let total = 0
+      for (const t of tools) {
+        const tokens = Math.ceil((t.name.length + (t.description?.length ?? 0) + JSON.stringify(t.inputSchema).length) / 4)
+        breakdown[t.name] = tokens
+        total += tokens
+      }
+      logSchemaTokens(gateway?.id ?? null, total, JSON.stringify(breakdown))
+    } catch { /* never let token logging break tools/list */ }
+    return rpcOk(id, { tools })
   }
 
   if (method === 'tools/call') {
@@ -363,6 +376,26 @@ export async function POST(req: NextRequest) {
       ? isToolEnabledForGateway(gateway.id, platformId, action, installed.type)
       : isToolEnabled(platformId, action, installed.type)
     if (!toolEnabled) return rpcErr(id, -32602, `Action "${action}" is disabled`)
+
+    // Check approval status
+    if (action === 'check_approval') {
+      const approvalId = (args.approval_id as string) ?? ''
+      if (!approvalId) return rpcOk(id, toolError('check_approval requires args.approval_id'))
+      const req2 = getApprovalRequest(approvalId)
+      if (!req2) return rpcOk(id, toolError(`Approval "${approvalId}" not found`))
+      if (req2.instanceId !== platformId) return rpcOk(id, toolError('Approval belongs to a different platform'))
+      if (req2.status === 'pending') return rpcOk(id, toolResult('Still waiting for human approval. Try again in a few seconds.'))
+      if (req2.status === 'rejected') return rpcOk(id, toolResult(`Action rejected by human. Reason: ${req2.rejectReason ?? 'none given'}. Do not retry automatically.`))
+      // approved
+      if (req2.resultJson) return rpcOk(id, toolResult(JSON.parse(req2.resultJson)))
+      try {
+        const raw = await executeTool(platformId, installed.type, installed.port, req2.action, JSON.parse(req2.argsJson))
+        storeApprovalResult(approvalId, JSON.stringify(raw))
+        return rpcOk(id, toolResult(raw))
+      } catch (e) {
+        return rpcOk(id, toolError(e instanceof Error ? e.message : 'Execution failed'))
+      }
+    }
 
     // Pagination fetch — no backend call, no rate-limit, no cache needed
     if (action === 'get_page') {
@@ -403,6 +436,25 @@ export async function POST(req: NextRequest) {
 
     const sessionId  = req.headers.get('mcp-session-id') ?? undefined
     const gwPayload  = { id: gateway?.id ?? null, name: gateway?.name ?? 'master' }
+
+    // Approval gate
+    if (matchesApprovalRule(platformId, action)) {
+      const approvalId = randomBytes(6).toString('hex')
+      createApprovalRequest(platformId, action, JSON.stringify(cleanArgs), approvalId)
+      const dashHost = req.headers.get('host') ?? 'localhost:1234'
+      if (webhookOn && webhookUrl) {
+        fireWebhook(webhookUrl, {
+          event: 'approval_request', approval_id: approvalId,
+          instance_id: platformId, action, args: cleanArgs,
+          created_at: Math.floor(Date.now() / 1000),
+          dashboard_url: `http://${dashHost}?approval=${approvalId}`,
+        })
+      }
+      logToolCall({ platform: platformId, action, args: redact(cleanArgs, redactKeys), outcome: 'success', latencyMs: 0, sessionId, gatewayId: gateway?.id })
+      return rpcOk(id, toolResult(
+        `APPROVAL_REQUIRED — this action needs human confirmation before it can run.\napproval_id: ${approvalId}\naction: ${action}\nargs: ${JSON.stringify(cleanArgs, null, 2)}\nPoll status with: { action: "check_approval", args: { approval_id: "${approvalId}" } }`
+      ))
+    }
 
     // Cache check (before rate limit — hits don't touch backends)
     if (cacheOn && !nocache) {
@@ -464,6 +516,48 @@ export async function POST(req: NextRequest) {
       // Cache store (skip for paginated results — page cache handles them)
       if (cacheOn && !nocache && !isPaginated) {
         toolCache.set(ck(platformId, action, cleanArgs), { result: raw, expiresAt: Date.now() + cacheTtl * 1000 })
+      }
+
+      // Diff tracking — only for non-paginated array results
+      let diffPrefix = ''
+      if (!isPaginated && Array.isArray(raw) && sessionId && (action.startsWith('list_') || action.startsWith('get_'))) {
+        try {
+          const argsHash  = createHash('sha256').update(JSON.stringify(cleanArgs)).digest('hex').slice(0, 16)
+          const snapshot  = getActionSnapshot(platformId, action, argsHash)
+          if (!snapshot) {
+            setActionSnapshot(platformId, action, argsHash, JSON.stringify(raw), raw.length)
+          } else if (!isDiffShown(sessionId, platformId, action, argsHash)) {
+            const prev   = JSON.parse(snapshot.snapshotJson) as unknown[]
+            const idKey  = ['id', 'name', 'path', 'title', 'Id', 'Name'].find((k) => raw.length > 0 && typeof (raw[0] as Record<string, unknown>)[k] !== 'undefined')
+            const ident  = (item: unknown): string => idKey ? String((item as Record<string, unknown>)[idKey]) : JSON.stringify(item)
+            const prevSet = new Set(prev.map(ident))
+            const newSet  = new Set(raw.map(ident))
+            const added   = raw.filter((i) => !prevSet.has(ident(i))).map(ident)
+            const removed = prev.filter((i) => !newSet.has(ident(i))).map(ident)
+            if (added.length > 0 || removed.length > 0) {
+              markDiffShown(sessionId, platformId, action, argsHash)
+              setActionSnapshot(platformId, action, argsHash, JSON.stringify(raw), raw.length)
+              const parts: string[] = []
+              if (added.length)   parts.push(`+${added.length} added: ${added.slice(0, 5).join(', ')}${added.length > 5 ? ` …+${added.length - 5}` : ''}`)
+              if (removed.length) parts.push(`-${removed.length} removed: ${removed.slice(0, 5).join(', ')}${removed.length > 5 ? ` …+${removed.length - 5}` : ''}`)
+              diffPrefix = `[CHANGES SINCE LAST SESSION: ${parts.join(', ')}]\n${'─'.repeat(40)}\n`
+            } else {
+              setActionSnapshot(platformId, action, argsHash, JSON.stringify(raw), raw.length)
+            }
+          }
+        } catch { /* diff failures never break the call */ }
+      }
+
+      // Context prefix injection (named gateway only)
+      let ctxPrefix = ''
+      if (gateway?.contextPrefix?.trim()) {
+        ctxPrefix = gateway.contextPrefix.trim() + '\n\n' + '─'.repeat(40) + '\n\n'
+      }
+
+      // Compose final text output
+      if (diffPrefix || ctxPrefix) {
+        const base = typeof finalResult === 'string' ? finalResult : JSON.stringify(finalResult, null, 2)
+        finalResult = ctxPrefix + diffPrefix + base
       }
 
       // Webhook (fire-and-forget)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedRequest } from '../../../lib/auth'
-import { createGateway, listGateways, deleteGateway, renameGateway, setGatewayInstances } from '../../../lib/db'
+import { createGateway, listGateways, deleteGateway, renameGateway, setGatewayInstances, setGatewayContextPrefix } from '../../../lib/db'
 import { generateGatewayKey, hashGatewayKey } from '../../../lib/crypto'
 import { randomBytes } from 'crypto'
 
@@ -30,8 +30,14 @@ export async function DELETE(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   if (!isAuthorizedRequest(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { id, name } = await req.json()
-  if (!id || !name?.trim()) return NextResponse.json({ error: 'id and name required' }, { status: 400 })
-  renameGateway(id, name.trim())
+  const body = await req.json() as { id: string; name?: string; contextPrefix?: string }
+  if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+  if (body.name !== undefined) {
+    if (!body.name.trim()) return NextResponse.json({ error: 'name required' }, { status: 400 })
+    renameGateway(body.id, body.name.trim())
+  }
+  if (body.contextPrefix !== undefined) {
+    setGatewayContextPrefix(body.id, body.contextPrefix)
+  }
   return NextResponse.json({ ok: true })
 }

@@ -25,6 +25,8 @@ interface SessionSummary { session_id: string; calls: number; platforms: number;
 interface TokenBurnAction { platform: string; action: string; inputTokens: number; outputTokens: number; calls: number }
 interface TokenBurn      { totalInputTokens: number; totalOutputTokens: number; perAction: TokenBurnAction[] }
 
+interface SchemaTokenEntry { timestamp: number; gatewayId: string | null; totalTokens: number; breakdownJson: string }
+
 interface InsightsData {
   summary:       Summary
   callsPerDay:   DayData[]
@@ -37,6 +39,8 @@ interface InsightsData {
   latencyTrend:  LatTrend[]
   cooccurrence:  CoOccur[]
   tokenBurn:     TokenBurn
+  schemaTrend:   SchemaTokenEntry[]
+  latestSchema:  SchemaTokenEntry | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -802,9 +806,131 @@ function TokenBurnTab({ data }: { data: TokenBurn }) {
   )
 }
 
+// ─── Schema token tab ─────────────────────────────────────────────────────────
+
+const CONTEXT_WINDOWS = [
+  { label: 'GPT-4o',    tokens: 128_000 },
+  { label: 'Claude',    tokens: 200_000 },
+  { label: 'Gemini',    tokens: 1_000_000 },
+]
+
+function SchemaTab({ trend, latest }: { trend: SchemaTokenEntry[]; latest: SchemaTokenEntry | null }) {
+  const [expandedInst, setExpandedInst] = useState<string | null>(null)
+
+  const breakdown: Record<string, number> = latest ? (() => {
+    try { return JSON.parse(latest.breakdownJson) as Record<string, number> } catch { return {} }
+  })() : {}
+
+  const total      = latest?.totalTokens ?? 0
+  const instances  = Object.entries(breakdown).sort((a, b) => b[1] - a[1])
+  const maxInstTok = instances.length ? instances[0][1] : 1
+
+  const trendDays = new Map<string, number>()
+  for (const e of trend) {
+    const day = new Date(e.timestamp).toISOString().slice(0, 10)
+    if (!trendDays.has(day)) trendDays.set(day, e.totalTokens)
+  }
+  const trendArr = [...trendDays.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  const maxTrend = trendArr.length ? Math.max(...trendArr.map((d) => d[1]), 1) : 1
+
+  function barColor(pct: number): string {
+    if (pct >= 0.5) return S.red
+    if (pct >= 0.2) return S.yellow
+    return S.green
+  }
+
+  if (!latest) {
+    return (
+      <div style={{ color: S.dim, fontSize: 13, paddingTop: 40, textAlign: 'center' }}>
+        No schema data yet — make a tools/list call first.<br />
+        <span style={{ fontSize: 11 }}>Connect Claude Code and run any tool to populate this.</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Hero */}
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: '24px 28px' }}>
+        <div style={{ color: S.green, fontSize: 42, fontWeight: 'bold', fontFamily: 'monospace', lineHeight: 1 }}>{fmtTok(total)}</div>
+        <div style={{ color: S.muted, fontSize: 13, marginTop: 6 }}>tokens consumed by tool schema per turn</div>
+        <div style={{ color: S.dim, fontSize: 11, marginTop: 3 }}>charged before your conversation even starts</div>
+      </div>
+
+      {/* Context window gauge */}
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
+        <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Context window impact</div>
+        {CONTEXT_WINDOWS.map((cw) => {
+          const pct = total / cw.tokens
+          return (
+            <div key={cw.label} style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ color: S.muted, fontSize: 12, fontFamily: 'monospace', width: 80 }}>{cw.label}</span>
+                <span style={{ color: S.dim, fontSize: 11 }}>{(cw.tokens / 1000).toFixed(0)}K</span>
+                <div style={{ flex: 1, height: 12, background: 'var(--border)', borderRadius: 2, margin: '0 12px', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(pct * 100, 100)}%`, height: '100%', background: barColor(pct), borderRadius: 2, opacity: 0.8 }} />
+                </div>
+                <span style={{ color: barColor(pct), fontSize: 11, fontFamily: 'monospace', width: 40, textAlign: 'right' }}>{Math.round(pct * 100)}%</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Per-instance breakdown */}
+      {instances.length > 0 && (
+        <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Per-instance breakdown</div>
+          {instances.map(([name, tokens]) => {
+            const pct    = tokens / total
+            const barPct = tokens / maxInstTok
+            const expanded = expandedInst === name
+            return (
+              <div key={name} style={{ marginBottom: 10 }}>
+                <div
+                  onClick={() => setExpandedInst(expanded ? null : name)}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}
+                >
+                  <span style={{ color: S.green, fontSize: 12, fontFamily: 'monospace', width: 140, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                  <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ width: `${barPct * 100}%`, height: '100%', background: barColor(pct), borderRadius: 2, opacity: 0.8 }} />
+                  </div>
+                  <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', width: 80, textAlign: 'right', flexShrink: 0 }}>
+                    {fmtTok(tokens)} ({Math.round(pct * 100)}%)
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Trend sparkline */}
+      {trendArr.length > 1 && (
+        <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>Schema size trend</div>
+          <svg viewBox={`0 0 ${trendArr.length * 30} 60`} style={{ width: '100%', height: 60, display: 'block' }}>
+            {trendArr.map(([day, v], i) => {
+              const x = i * 30 + 15
+              const h = Math.max((v / maxTrend) * 50, 2)
+              const y = 55 - h
+              return (
+                <g key={day}>
+                  <rect x={x - 8} y={y} width={16} height={h} fill={S.green} opacity={0.6} rx={1} />
+                  {trendArr.length <= 14 && <text x={x} y={58} fontSize={7} fill={S.dim} textAnchor="middle">{day.slice(5)}</text>}
+                </g>
+              )
+            })}
+          </svg>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Tab nav ──────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'sessions' | 'errors' | 'heatmap' | 'callers' | 'tokens'
+type Tab = 'overview' | 'sessions' | 'errors' | 'heatmap' | 'callers' | 'tokens' | 'schema'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'sessions', label: 'Sessions' },
@@ -812,6 +938,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'heatmap',  label: 'Heatmap' },
   { id: 'callers',  label: 'Callers' },
   { id: 'tokens',   label: 'Tokens' },
+  { id: 'schema',   label: 'Schema' },
 ]
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -907,6 +1034,7 @@ export default function InsightsClient() {
           {tab === 'heatmap'  && <HeatmapTab  data={data.heatmap} />}
           {tab === 'callers'  && <CallersTab  perUA={data.perUA} perPlatform={data.perPlatform} recentCalls={data.recentCalls} />}
           {tab === 'tokens'   && <TokenBurnTab data={data.tokenBurn} />}
+          {tab === 'schema'   && <SchemaTab trend={data.schemaTrend ?? []} latest={data.latestSchema ?? null} />}
         </>
       ) : null}
 

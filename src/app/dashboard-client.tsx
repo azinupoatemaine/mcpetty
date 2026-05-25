@@ -38,6 +38,26 @@ interface ServerData {
   latencyMs?: number
   credentials: Array<{ key: string; label: string; type: string; required: boolean }>
   tags?: string[]
+  healthCheckIntervalSeconds?: number
+  healthCheckFailThreshold?: number
+  healthConsecutiveFails?: number
+  healthLastCheckedAt?: number | null
+  healthLastStatus?: string | null
+  healthLastError?: string | null
+  autoDisabled?: boolean
+}
+
+interface ApprovalRequest {
+  id:           string
+  instanceId:   string
+  action:       string
+  argsJson:     string
+  status:       'pending' | 'approved' | 'rejected'
+  createdAt:    number
+  decidedAt:    number | null
+  decisionBy:   string | null
+  rejectReason: string | null
+  resultJson:   string | null
 }
 
 interface CatalogCredential {
@@ -626,6 +646,317 @@ function TagEditor({ serverId, initial }: { serverId: string; initial: string[] 
   )
 }
 
+// ─── Approval panel ──────────────────────────────────────────────────────────
+
+function ApprovalPanel({ onClose, onDecided }: { onClose: () => void; onDecided: () => void }) {
+  const [approvals,   setApprovals]   = useState<ApprovalRequest[]>([])
+  const [tab,         setTab]         = useState<'pending' | 'history'>('pending')
+  const [rejectId,    setRejectId]    = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const load = useCallback(async () => {
+    const [pending, all] = await Promise.all([
+      fetch('/api/approvals?status=pending').then((r) => r.json()),
+      fetch('/api/approvals').then((r) => r.json()),
+    ])
+    setApprovals(tab === 'pending' ? pending : all)
+  }, [tab])
+
+  useEffect(() => {
+    load()
+    const interval = setInterval(load, 3000)
+    return () => clearInterval(interval)
+  }, [load])
+
+  async function decide(id: string, decision: 'approved' | 'rejected', reason?: string) {
+    await fetch(`/api/approvals/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, reason }),
+    })
+    setRejectId(null); setRejectReason('')
+    load(); onDecided()
+  }
+
+  const pending  = approvals.filter((a) => a.status === 'pending')
+  const history  = approvals.filter((a) => a.status !== 'pending')
+  const displayed = tab === 'pending' ? pending : history
+
+  function timeAgo(ms: number) {
+    const s = Math.floor((Date.now() - ms) / 1000)
+    if (s < 60)     return `${s}s ago`
+    if (s < 3600)   return `${Math.floor(s / 60)}m ago`
+    return `${Math.floor(s / 3600)}h ago`
+  }
+
+  return (
+    <div onClick={(e) => e.target === e.currentTarget && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: 60 }}>
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: '8px 0 0 8px', width: '100%', maxWidth: 520, height: '100vh', overflowY: 'auto', fontFamily: 'monospace', padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <div style={{ color: S.text, fontWeight: 'bold', fontSize: 15 }}>Approval Queue</div>
+            <div style={{ color: S.dim, fontSize: 11, marginTop: 2 }}>human-in-the-loop for your trigger-happy AI</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: S.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: `1px solid ${S.border}` }}>
+          {(['pending', 'history'] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              style={{ background: 'none', border: 'none', borderBottom: `2px solid ${tab === t ? S.green : 'transparent'}`, color: tab === t ? S.green : S.dim, fontSize: 12, padding: '5px 12px', cursor: 'pointer', fontFamily: 'monospace', marginBottom: -1 }}
+            >
+              {t === 'pending' ? `Pending (${pending.length})` : 'History'}
+            </button>
+          ))}
+        </div>
+
+        {displayed.length === 0 ? (
+          <div style={{ color: S.dim, fontSize: 13, textAlign: 'center', paddingTop: 40 }}>
+            {tab === 'pending' ? 'Nothing waiting. Your AI is being uncharacteristically restrained.' : 'No decisions recorded yet.'}
+          </div>
+        ) : displayed.map((req) => (
+          <div key={req.id} style={{ background: S.bg, border: `1px solid ${req.status === 'pending' ? S.yellow : req.status === 'approved' ? S.green : S.red}22`, borderLeft: `3px solid ${req.status === 'pending' ? S.yellow : req.status === 'approved' ? S.green : S.red}`, borderRadius: 6, padding: '12px 14px', marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ color: S.green, fontSize: 13, fontWeight: 'bold', fontFamily: 'monospace' }}>{req.instanceId}</span>
+              <span style={{ color: S.dim, fontSize: 10 }}>{timeAgo(req.createdAt)}</span>
+            </div>
+            <div style={{ color: S.text, fontSize: 12, marginBottom: 6 }}>
+              <span style={{ color: S.yellow }}>action:</span> {req.action}
+            </div>
+            <pre style={{ background: '#0a0a0a', border: `1px solid #1a1a1a`, borderRadius: 4, padding: '6px 8px', fontSize: 10, color: S.muted, overflow: 'auto', maxHeight: 120, margin: '0 0 10px 0' }}>
+              {JSON.stringify(JSON.parse(req.argsJson), null, 2)}
+            </pre>
+
+            {req.status === 'pending' && (
+              rejectId === req.id ? (
+                <div>
+                  <input
+                    autoFocus
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="Reason (optional)"
+                    onKeyDown={(e) => { if (e.key === 'Enter') decide(req.id, 'rejected', rejectReason); if (e.key === 'Escape') setRejectId(null) }}
+                    style={{ width: '100%', boxSizing: 'border-box', background: S.card, border: `1px solid ${S.border}`, color: S.text, padding: '4px 8px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none', marginBottom: 6 }}
+                  />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => decide(req.id, 'rejected', rejectReason)} style={{ background: 'none', border: `1px solid ${S.red}`, color: S.red, padding: '3px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}>confirm reject</button>
+                    <button onClick={() => setRejectId(null)} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '3px 10px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}>cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => decide(req.id, 'approved')} style={{ background: '#0a1a0a', border: `1px solid ${S.green}`, color: S.green, padding: '4px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4, flex: 1 }}>✓ Approve</button>
+                  <button onClick={() => { setRejectId(req.id); setRejectReason('') }} style={{ background: '#1a0a0a', border: `1px solid ${S.red}`, color: S.red, padding: '4px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4, flex: 1 }}>✕ Reject</button>
+                </div>
+              )
+            )}
+
+            {req.status !== 'pending' && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ color: req.status === 'approved' ? S.green : S.red, fontSize: 11, fontWeight: 'bold' }}>
+                  {req.status === 'approved' ? '✓ approved' : '✕ rejected'}
+                </span>
+                <span style={{ color: S.dim, fontSize: 10 }}>by {req.decisionBy}</span>
+                {req.rejectReason && <span style={{ color: S.dim, fontSize: 10 }}>— {req.rejectReason}</span>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Health check panel (in gear modal) ──────────────────────────────────────
+
+function HealthCheckPanel({ server }: { server: ServerData }) {
+  const [open,      setOpen]      = useState(false)
+  const [interval,  setInterval2] = useState(server.healthCheckIntervalSeconds ?? 0)
+  const [threshold, setThreshold] = useState(server.healthCheckFailThreshold ?? 3)
+  const [saving,    setSaving]    = useState(false)
+  const [saved,     setSaved]     = useState(false)
+
+  async function save() {
+    setSaving(true)
+    await fetch('/api/health-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instanceId: server.id, intervalSeconds: interval, failThreshold: threshold }),
+    })
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  async function reenable() {
+    await fetch('/api/health-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instanceId: server.id, intervalSeconds: interval, failThreshold: threshold }),
+    })
+    window.location.reload()
+  }
+
+  const INTERVALS = [
+    { label: 'off',   secs: 0 },
+    { label: '1 min', secs: 60 },
+    { label: '5 min', secs: 300 },
+    { label: '15 min', secs: 900 },
+    { label: '30 min', secs: 1800 },
+  ]
+
+  return (
+    <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
+      <button onClick={() => setOpen(!open)} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', fontFamily: 'monospace', padding: 0 }}>
+        {open ? '▼' : '▶'} health check
+        {server.healthLastCheckedAt && (
+          <span style={{ color: '#444', fontSize: 10, marginLeft: 8 }}>
+            last checked {Math.round((Date.now() - server.healthLastCheckedAt) / 60000)}m ago
+          </span>
+        )}
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {server.autoDisabled && (
+            <div style={{ background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 4, padding: '8px 12px', marginBottom: 12, fontSize: 12 }}>
+              <div style={{ color: S.yellow, fontWeight: 'bold', marginBottom: 4 }}>AUTO-DISABLED</div>
+              <div style={{ color: S.muted, lineHeight: 1.5 }}>
+                Disabled automatically after {server.healthConsecutiveFails} consecutive failure{server.healthConsecutiveFails !== 1 ? 's' : ''}.
+                {server.healthLastError && <> Last error: {server.healthLastError}</>}
+                <br/>Will re-enable automatically on recovery.
+              </div>
+              <button onClick={reenable} style={{ background: 'none', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '3px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3, marginTop: 8 }}>Re-enable now</button>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ color: S.dim, fontSize: 11, marginBottom: 6 }}>Check interval</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {INTERVALS.map((opt) => (
+                <button
+                  key={opt.secs}
+                  onClick={() => setInterval2(opt.secs)}
+                  style={{ background: interval === opt.secs ? S.green : 'none', color: interval === opt.secs ? '#000' : S.dim, border: `1px solid ${interval === opt.secs ? S.green : S.border}`, padding: '3px 10px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {interval > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: S.dim, fontSize: 11, marginBottom: 6 }}>Disable after <span style={{ color: S.text }}>{threshold}</span> consecutive failures</div>
+              <input
+                type="range" min={1} max={10} value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                style={{ width: '100%', accentColor: S.green }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: S.dim, fontSize: 10 }}>
+                <span>1</span><span>10</span>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={save}
+            disabled={saving}
+            style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '5px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+          >
+            {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Approval rules panel (in gear modal) ────────────────────────────────────
+
+function ApprovalRulesPanel({ serverId }: { serverId: string }) {
+  const [open,    setOpen]    = useState(false)
+  const [rules,   setRules]   = useState<Array<{ pattern: string; enabled: boolean }>>([])
+  const [draft,   setDraft]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [saved,   setSaved]   = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    fetch(`/api/approvals/rules/${encodeURIComponent(serverId)}`).then((r) => r.json()).then(setRules)
+  }, [open, serverId])
+
+  async function save(next: typeof rules) {
+    setSaving(true)
+    await fetch(`/api/approvals/rules/${encodeURIComponent(serverId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    })
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  function addRule() {
+    if (!draft.trim()) return
+    const next = [...rules, { pattern: draft.trim(), enabled: true }]
+    setRules(next); setDraft(''); save(next)
+  }
+
+  function toggle(i: number) {
+    const next = rules.map((r, idx) => idx === i ? { ...r, enabled: !r.enabled } : r)
+    setRules(next); save(next)
+  }
+
+  function remove(i: number) {
+    const next = rules.filter((_, idx) => idx !== i)
+    setRules(next); save(next)
+  }
+
+  return (
+    <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
+      <button onClick={() => setOpen(!open)} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', fontFamily: 'monospace', padding: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {open ? '▼' : '▶'} approval rules
+        {rules.length > 0 && <span style={{ color: S.yellow, fontSize: 10 }}>{rules.filter((r) => r.enabled).length} active</span>}
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ color: S.dim, fontSize: 11, marginBottom: 8, lineHeight: 1.5 }}>
+            Actions matching these patterns require human approval before running. Glob syntax: <code style={{ color: S.green }}>delete_*</code>
+          </div>
+          {rules.length === 0 ? (
+            <div style={{ color: '#333', fontSize: 12, marginBottom: 10 }}>No rules. Everything runs without approval.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+              {rules.map((r, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    onClick={() => toggle(i)}
+                    style={{ width: 14, height: 14, flexShrink: 0, border: `1px solid ${r.enabled ? S.yellow : S.border}`, background: r.enabled ? S.yellow : 'transparent', borderRadius: 2, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {r.enabled && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
+                  </div>
+                  <code style={{ color: r.enabled ? S.text : S.dim, fontSize: 12, flex: 1 }}>{r.pattern}</code>
+                  <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: '#444', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addRule()}
+              placeholder="action_name or glob e.g. delete_*"
+              style={{ flex: 1, background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '4px 8px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
+            />
+            <button onClick={addRule} style={{ background: S.yellow + '22', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '4px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}>add</button>
+          </div>
+          {saved && <div style={{ color: S.green, fontSize: 10, marginTop: 4 }}>✓ saved</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Server card ──────────────────────────────────────────────────────────────
 
 function ServerCard({ server, onInvoke, onRefresh, onUninstall }: { server: ServerData; onInvoke: (m: InvokeModal) => void; onRefresh: () => void; onUninstall: () => void }) {
@@ -658,14 +989,19 @@ function ServerCard({ server, onInvoke, onRefresh, onUninstall }: { server: Serv
     loadCreds()
   }
 
+  const statusColor  = server.autoDisabled ? S.yellow : server.online ? S.green : S.red
+  const statusBorder = server.autoDisabled ? '#2a2000' : server.online ? '#1a3a1a' : '#2a1a1a'
+  const statusDot    = server.autoDisabled ? S.yellow : server.online ? S.green : S.red
+
   return (
-    <div style={{ background: S.card, border: `1px solid ${server.online ? '#1a3a1a' : '#2a1a1a'}`, borderRadius: 8, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ background: S.card, border: `1px solid ${statusBorder}`, borderRadius: 8, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: server.online ? S.green : S.red, display: 'inline-block', boxShadow: `0 0 6px ${server.online ? S.green : S.red}`, flexShrink: 0 }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot, display: 'inline-block', boxShadow: `0 0 6px ${statusDot}`, flexShrink: 0 }} />
           <span style={{ fontWeight: 'bold', fontSize: 16, color: S.text }}>{server.name}</span>
+          {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
           <TagEditor serverId={server.id} initial={server.tags} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -781,6 +1117,12 @@ function ServerCard({ server, onInvoke, onRefresh, onUninstall }: { server: Serv
 
             {/* Tool access control */}
             {server.online && <ToolAccessPanel server={server} />}
+
+            {/* Approval rules */}
+            <ApprovalRulesPanel serverId={server.id} />
+
+            {/* Health check */}
+            {server.native && <HealthCheckPanel server={server} />}
 
             {/* Danger zone */}
             <div style={{ borderTop: `1px solid #2a1a1a`, paddingTop: 16, marginTop: 16 }}>
@@ -909,11 +1251,13 @@ function Library({ onInstalled }: { onInstalled: () => void }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [servers, setServers]  = useState<ServerData[]>([])
-  const [loading, setLoading]  = useState(true)
-  const [loadMsg]              = useState(rand(SNARKY_LOADING))
-  const [modal, setModal]      = useState<InvokeModal | null>(null)
-  const [lastRefresh, setLast] = useState<Date | null>(null)
+  const [servers, setServers]       = useState<ServerData[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [loadMsg]                   = useState(rand(SNARKY_LOADING))
+  const [modal, setModal]           = useState<InvokeModal | null>(null)
+  const [lastRefresh, setLast]      = useState<Date | null>(null)
+  const [pendingCount, setPending]  = useState(0)
+  const [approvalOpen, setApprovalOpen] = useState(false)
 
   const fetchServers = useCallback(async () => {
     setLoading(true)
@@ -924,7 +1268,19 @@ export default function Dashboard() {
     } catch { /* silent */ } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchServers() }, [fetchServers])
+  const pollApprovals = useCallback(async () => {
+    try {
+      const data = await fetch('/api/approvals?status=pending').then((r) => r.json()) as ApprovalRequest[]
+      setPending(Array.isArray(data) ? data.length : 0)
+    } catch { /* silent */ }
+  }, [])
+
+  useEffect(() => {
+    fetchServers()
+    pollApprovals()
+    const t = setInterval(pollApprovals, 10000)
+    return () => clearInterval(t)
+  }, [fetchServers, pollApprovals])
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -937,7 +1293,7 @@ export default function Dashboard() {
   return (
     <div style={{ minHeight: '100vh', padding: '32px 24px', maxWidth: 900, margin: '0 auto', fontFamily: 'monospace' }}>
 
-      <Nav active="Dashboard" />
+      <Nav active="Dashboard" approvalCount={pendingCount} onApprovalsClick={() => setApprovalOpen(true)} />
 
       {/* Stats bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: `1px solid #1a1a1a`, paddingBottom: 16 }}>
@@ -995,6 +1351,7 @@ export default function Dashboard() {
       <Footer motto="your config, your problem" />
 
       {modal && <InvokeModal modal={modal} onClose={() => setModal(null)} />}
+      {approvalOpen && <ApprovalPanel onClose={() => setApprovalOpen(false)} onDecided={pollApprovals} />}
     </div>
   )
 }

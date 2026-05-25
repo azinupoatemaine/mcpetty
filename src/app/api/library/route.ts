@@ -4,6 +4,7 @@ import { installMCP, uninstallMCP, getInstancesByType, credentialStatus, setCred
 import { startMCP, stopMCP } from '../../../lib/process-manager'
 import { isAuthorizedRequest } from '../../../lib/auth'
 import { NATIVE } from '../../../lib/native'
+import { broadcastNotification } from '../../../lib/sse-bus'
 
 // GET /api/library — catalog types with their installed instances
 export async function GET(req: NextRequest) {
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
 
   installMCP(instanceId, type, instanceName || type, entry.internalPort ?? 0)
   startMCP(instanceId, type, entry.internalPort ?? 0)
+  broadcastNotification({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
 
   return NextResponse.json({ ok: true, instanceId })
 }
@@ -70,6 +72,7 @@ export async function DELETE(req: NextRequest) {
 
   stopMCP(instanceId)
   uninstallMCP(instanceId)
+  broadcastNotification({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
 
   return NextResponse.json({ ok: true })
 }

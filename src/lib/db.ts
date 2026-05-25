@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
+import { randomBytes } from 'crypto'
 import { encrypt, decrypt, validateSecret } from './crypto'
 
 const DATA_DIR = process.env.DATA_DIR || '/app/data'
@@ -172,6 +173,43 @@ function db(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS schema_token_log_ts ON schema_token_log(timestamp);
+
+    CREATE TABLE IF NOT EXISTS namespaces (
+      id         TEXT    PRIMARY KEY,
+      name       TEXT    NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS namespace_keys (
+      id           TEXT    PRIMARY KEY,
+      namespace_id TEXT    NOT NULL,
+      key_hash     TEXT    NOT NULL UNIQUE,
+      label        TEXT    NOT NULL DEFAULT '',
+      created_at   INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS namespace_keys_hash ON namespace_keys(key_hash);
+
+    CREATE TABLE IF NOT EXISTS namespace_servers (
+      namespace_id TEXT NOT NULL,
+      instance_id  TEXT NOT NULL,
+      PRIMARY KEY (namespace_id, instance_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS namespace_tool_filters (
+      namespace_id TEXT    NOT NULL,
+      instance_id  TEXT    NOT NULL,
+      tool_name    TEXT    NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (namespace_id, instance_id, tool_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS namespace_middleware (
+      namespace_id TEXT NOT NULL,
+      type         TEXT NOT NULL,
+      config_json  TEXT NOT NULL,
+      PRIMARY KEY (namespace_id, type)
+    );
   `)
   migrateInstalledMCPs()
   migrateInstalledMCPsTag()
@@ -633,9 +671,11 @@ export function getInsights(days = 7, platform?: string) {
 
   const pfT = platform ? ' AND t.platform = @platform' : ''
   const recentCalls = db().prepare(`
-    SELECT t.id, t.timestamp, t.platform, t.action, t.args_json, t.outcome, t.latency_ms, t.error, t.gateway_id, t.user_agent, t.result_json, g.name as gateway_name
+    SELECT t.id, t.timestamp, t.platform, t.action, t.args_json, t.outcome, t.latency_ms, t.error, t.gateway_id, t.user_agent, t.result_json,
+           COALESCE(g.name, ns.name) as gateway_name
     FROM tool_call_log t
-    LEFT JOIN gateways g ON g.id = t.gateway_id
+    LEFT JOIN gateways   g  ON g.id  = t.gateway_id
+    LEFT JOIN namespaces ns ON ns.id = t.gateway_id
     WHERE t.timestamp > @since${pfT}
     ORDER BY t.timestamp DESC LIMIT 150
   `).all(bp) as CallRecord[]
@@ -750,9 +790,11 @@ export function getSessions(days = 7): SessionSummary[] {
 export function getSessionCalls(sessionId: string): CallRecord[] {
   return db().prepare(`
     SELECT t.id, t.timestamp, t.platform, t.action, t.args_json, t.outcome,
-           t.latency_ms, t.error, t.gateway_id, t.user_agent, t.result_json, g.name as gateway_name
+           t.latency_ms, t.error, t.gateway_id, t.user_agent, t.result_json,
+           COALESCE(g.name, ns.name) as gateway_name
     FROM tool_call_log t
-    LEFT JOIN gateways g ON g.id = t.gateway_id
+    LEFT JOIN gateways   g  ON g.id  = t.gateway_id
+    LEFT JOIN namespaces ns ON ns.id = t.gateway_id
     WHERE t.session_id = ?
     ORDER BY t.timestamp ASC
   `).all(sessionId) as CallRecord[]
@@ -1106,6 +1148,139 @@ export function getSchemaTokenTrend(days = 7): SchemaTokenEntry[] {
   const since = Date.now() - days * 24 * 60 * 60 * 1000
   return (db().prepare('SELECT timestamp, gateway_id, total_tokens, breakdown_json FROM schema_token_log WHERE timestamp > ? ORDER BY timestamp ASC').all(since) as Array<{ timestamp: number; gateway_id: string | null; total_tokens: number; breakdown_json: string }>)
     .map((r) => ({ timestamp: r.timestamp, gatewayId: r.gateway_id, totalTokens: r.total_tokens, breakdownJson: r.breakdown_json }))
+}
+
+// ─── Namespaces ───────────────────────────────────────────────────────────────
+
+export interface NamespaceKey {
+  id:        string
+  label:     string
+  createdAt: number
+}
+
+export interface NamespaceRecord {
+  id:          string
+  name:        string
+  createdAt:   number
+  instanceIds: string[]
+  keys:        NamespaceKey[]
+  middleware:  Record<string, unknown>
+}
+
+function buildNamespace(
+  r:         { id: string; name: string; created_at: number },
+  servers:   Map<string, string[]>,
+  keys:      Map<string, NamespaceKey[]>,
+  mw:        Map<string, Record<string, unknown>>
+): NamespaceRecord {
+  return { id: r.id, name: r.name, createdAt: r.created_at, instanceIds: servers.get(r.id) ?? [], keys: keys.get(r.id) ?? [], middleware: mw.get(r.id) ?? {} }
+}
+
+export function createNamespace(id: string, name: string): NamespaceRecord {
+  const now = Date.now()
+  db().prepare('INSERT INTO namespaces (id, name, created_at) VALUES (?, ?, ?)').run(id, name, now)
+  logChange('namespace_create', id, name)
+  return { id, name, createdAt: now, instanceIds: [], keys: [], middleware: {} }
+}
+
+export function listNamespaces(): NamespaceRecord[] {
+  const rows = db().prepare('SELECT id, name, created_at FROM namespaces ORDER BY created_at DESC').all() as Array<{ id: string; name: string; created_at: number }>
+  const serverRows = db().prepare('SELECT namespace_id, instance_id FROM namespace_servers').all() as Array<{ namespace_id: string; instance_id: string }>
+  const keyRows    = db().prepare('SELECT id, namespace_id, label, created_at FROM namespace_keys ORDER BY created_at ASC').all() as Array<{ id: string; namespace_id: string; label: string; created_at: number }>
+  const mwRows     = db().prepare('SELECT namespace_id, type, config_json FROM namespace_middleware').all() as Array<{ namespace_id: string; type: string; config_json: string }>
+
+  const servers = new Map<string, string[]>()
+  for (const r of serverRows) { const a = servers.get(r.namespace_id) ?? []; a.push(r.instance_id); servers.set(r.namespace_id, a) }
+
+  const keysMap = new Map<string, NamespaceKey[]>()
+  for (const r of keyRows) { const a = keysMap.get(r.namespace_id) ?? []; a.push({ id: r.id, label: r.label, createdAt: r.created_at }); keysMap.set(r.namespace_id, a) }
+
+  const mwMap = new Map<string, Record<string, unknown>>()
+  for (const r of mwRows) {
+    const m = mwMap.get(r.namespace_id) ?? {}
+    try { m[r.type] = JSON.parse(r.config_json) } catch { m[r.type] = r.config_json }
+    mwMap.set(r.namespace_id, m)
+  }
+
+  return rows.map((r) => buildNamespace(r, servers, keysMap, mwMap))
+}
+
+export function getNamespace(id: string): NamespaceRecord | null {
+  const r = db().prepare('SELECT id, name, created_at FROM namespaces WHERE id = ?').get(id) as { id: string; name: string; created_at: number } | undefined
+  if (!r) return null
+  const instanceIds = (db().prepare('SELECT instance_id FROM namespace_servers WHERE namespace_id = ?').all(id) as Array<{ instance_id: string }>).map((x) => x.instance_id)
+  const keys = (db().prepare('SELECT id, label, created_at FROM namespace_keys WHERE namespace_id = ? ORDER BY created_at ASC').all(id) as Array<{ id: string; label: string; created_at: number }>).map((k) => ({ id: k.id, label: k.label, createdAt: k.created_at }))
+  const mwRows = db().prepare('SELECT type, config_json FROM namespace_middleware WHERE namespace_id = ?').all(id) as Array<{ type: string; config_json: string }>
+  const middleware: Record<string, unknown> = {}
+  for (const m of mwRows) { try { middleware[m.type] = JSON.parse(m.config_json) } catch { middleware[m.type] = m.config_json } }
+  return { id: r.id, name: r.name, createdAt: r.created_at, instanceIds, keys, middleware }
+}
+
+export function deleteNamespace(id: string): void {
+  logChange('namespace_delete', id)
+  db().transaction(() => {
+    db().prepare('DELETE FROM namespace_servers      WHERE namespace_id = ?').run(id)
+    db().prepare('DELETE FROM namespace_keys         WHERE namespace_id = ?').run(id)
+    db().prepare('DELETE FROM namespace_tool_filters WHERE namespace_id = ?').run(id)
+    db().prepare('DELETE FROM namespace_middleware   WHERE namespace_id = ?').run(id)
+    db().prepare('DELETE FROM namespaces             WHERE id = ?').run(id)
+  })()
+}
+
+export function renameNamespace(id: string, name: string): void {
+  db().prepare('UPDATE namespaces SET name = ? WHERE id = ?').run(name, id)
+  logChange('namespace_rename', id, name)
+}
+
+export function setNamespaceServers(namespaceId: string, instanceIds: string[]): void {
+  db().transaction(() => {
+    db().prepare('DELETE FROM namespace_servers WHERE namespace_id = ?').run(namespaceId)
+    for (const id of instanceIds) {
+      db().prepare('INSERT INTO namespace_servers (namespace_id, instance_id) VALUES (?, ?)').run(namespaceId, id)
+    }
+  })()
+}
+
+export function addNamespaceKey(namespaceId: string, keyHash: string, label: string): string {
+  const id  = randomBytes(6).toString('hex')
+  const now = Date.now()
+  db().prepare('INSERT INTO namespace_keys (id, namespace_id, key_hash, label, created_at) VALUES (?, ?, ?, ?, ?)').run(id, namespaceId, keyHash, label, now)
+  logChange('namespace_key_add', namespaceId, label || id)
+  return id
+}
+
+export function deleteNamespaceKey(keyId: string): void {
+  db().prepare('DELETE FROM namespace_keys WHERE id = ?').run(keyId)
+}
+
+export function findNamespaceByKeyHash(keyHash: string): { namespaceId: string; keyId: string } | null {
+  const r = db().prepare('SELECT id, namespace_id FROM namespace_keys WHERE key_hash = ?').get(keyHash) as { id: string; namespace_id: string } | undefined
+  return r ? { namespaceId: r.namespace_id, keyId: r.id } : null
+}
+
+export function isToolEnabledForNamespace(namespaceId: string, instanceId: string, toolName: string, type?: string): boolean {
+  const nsRow = db().prepare('SELECT enabled FROM namespace_tool_filters WHERE namespace_id = ? AND instance_id = ? AND tool_name = ?').get(namespaceId, instanceId, toolName) as { enabled: number } | undefined
+  if (nsRow !== undefined) return nsRow.enabled === 1
+  return isToolEnabled(instanceId, toolName, type)
+}
+
+export function setNamespaceToolFilters(namespaceId: string, instanceId: string, filters: Record<string, boolean>): void {
+  const stmt = db().prepare('INSERT OR REPLACE INTO namespace_tool_filters (namespace_id, instance_id, tool_name, enabled) VALUES (?, ?, ?, ?)')
+  db().transaction(() => {
+    for (const [name, enabled] of Object.entries(filters)) stmt.run(namespaceId, instanceId, name, enabled ? 1 : 0)
+  })()
+}
+
+export function getNamespaceToolFilters(namespaceId: string, instanceId: string): Record<string, boolean> {
+  const rows = db().prepare('SELECT tool_name, enabled FROM namespace_tool_filters WHERE namespace_id = ? AND instance_id = ?').all(namespaceId, instanceId) as Array<{ tool_name: string; enabled: number }>
+  const out: Record<string, boolean> = {}
+  for (const r of rows) out[r.tool_name] = r.enabled === 1
+  return out
+}
+
+export function setNamespaceMiddleware(namespaceId: string, type: string, config: unknown): void {
+  db().prepare('INSERT OR REPLACE INTO namespace_middleware (namespace_id, type, config_json) VALUES (?, ?, ?)').run(namespaceId, type, JSON.stringify(config))
+  logChange('namespace_middleware', `${namespaceId}:${type}`)
 }
 
 export function getLatestSchemaTokenBreakdown(gatewayId: string | null): SchemaTokenEntry | null {

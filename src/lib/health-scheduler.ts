@@ -1,6 +1,8 @@
 import { getInstancesForHealthCheck, recordHealthOk, recordHealthFail, getSettingsMap } from './db'
 import { NATIVE } from './native'
 import { findCatalogEntry } from './mcp-catalog'
+import { initSession } from './mcp-client'
+import { getStdioBridge } from './process-manager'
 
 const CHECK_INTERVAL_MS = 30_000
 
@@ -17,7 +19,7 @@ async function runChecks() {
   const now = Date.now()
   await Promise.allSettled(
     instances.map(async (inst) => {
-      const { instanceId, type, healthCheckIntervalSeconds, healthLastCheckedAt, healthCheckFailThreshold, healthConsecutiveFails, autoDisabled } = inst
+      const { instanceId, type, healthCheckIntervalSeconds, healthLastCheckedAt, healthCheckFailThreshold, autoDisabled } = inst
 
       if (healthCheckIntervalSeconds > 0) {
         const lastChecked = healthLastCheckedAt ?? 0
@@ -27,41 +29,49 @@ async function runChecks() {
       }
 
       const entry = findCatalogEntry(type)
-      if (!entry || entry.transport !== 'native') return
-      const handler = NATIVE[type]
-      if (!handler) return
+      if (!entry) return
+
+      let ok: boolean
+      let pingError: string | undefined
 
       try {
-        const { ok, error } = await handler.ping(instanceId)
-        if (ok) {
-          const wasDown = autoDisabled
-          recordHealthOk(instanceId)
-          if (wasDown && webhookOn && webhookUrl) {
-            fireWebhook(webhookUrl, {
-              event: 'health_change', instance_id: instanceId,
-              status: 'recovered', consecutive_fails: 0, timestamp: Math.floor(Date.now() / 1000),
-            })
-          }
+        if (entry.transport === 'native') {
+          const handler = NATIVE[type]
+          if (!handler) return
+          const result = await handler.ping(instanceId)
+          ok = result.ok
+          pingError = result.error
+        } else if (entry.transport === 'http') {
+          await initSession(`http://localhost:${inst.port}`)
+          ok = true
+        } else if (entry.transport === 'stdio') {
+          const bridge = getStdioBridge(instanceId)
+          ok = bridge ? await bridge.ping() : false
+          if (!ok) pingError = bridge ? 'ping failed' : 'process not running'
         } else {
-          const { autoDisabledNow } = recordHealthFail(instanceId, error ?? 'ping failed')
-          if (autoDisabledNow && webhookOn && webhookUrl) {
-            fireWebhook(webhookUrl, {
-              event: 'health_change', instance_id: instanceId,
-              status: 'down', error: error ?? 'ping failed',
-              consecutive_fails: healthConsecutiveFails + 1,
-              threshold: healthCheckFailThreshold,
-              timestamp: Math.floor(Date.now() / 1000),
-            })
-          }
+          return
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : 'unknown error'
-        const { autoDisabledNow } = recordHealthFail(instanceId, msg)
+        ok = false
+        pingError = e instanceof Error ? e.message : 'unknown error'
+      }
+
+      if (ok) {
+        const wasDown = autoDisabled
+        recordHealthOk(instanceId)
+        if (wasDown && webhookOn && webhookUrl) {
+          fireWebhook(webhookUrl, {
+            event: 'health_change', instance_id: instanceId,
+            status: 'recovered', consecutive_fails: 0, timestamp: Math.floor(Date.now() / 1000),
+          })
+        }
+      } else {
+        const { autoDisabledNow, consecutiveFails } = recordHealthFail(instanceId, pingError ?? 'ping failed')
         if (autoDisabledNow && webhookOn && webhookUrl) {
           fireWebhook(webhookUrl, {
             event: 'health_change', instance_id: instanceId,
-            status: 'down', error: msg,
-            consecutive_fails: healthConsecutiveFails + 1,
+            status: 'down', error: pingError ?? 'ping failed',
+            consecutive_fails: consecutiveFails,
             threshold: healthCheckFailThreshold,
             timestamp: Math.floor(Date.now() / 1000),
           })

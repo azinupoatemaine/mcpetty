@@ -1,8 +1,9 @@
 import Database from 'better-sqlite3'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
-import { randomBytes } from 'crypto'
-import { encrypt, decrypt, validateSecret } from './crypto'
+import { randomBytes, createHmac } from 'crypto'
+import { encrypt, decrypt, validateSecret, getSecret } from './crypto'
+import { currentActor, type ActorType } from './audit'
 
 const DATA_DIR = process.env.DATA_DIR || '/app/data'
 const DB_PATH  = join(DATA_DIR, 'mcpetty.db')
@@ -210,6 +211,19 @@ function db(): Database.Database {
       config_json  TEXT NOT NULL,
       PRIMARY KEY (namespace_id, type)
     );
+
+    CREATE TABLE IF NOT EXISTS immutable_audit_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp   INTEGER NOT NULL,
+      actor_type  TEXT    NOT NULL,
+      actor_id    TEXT    NOT NULL,
+      event_type  TEXT    NOT NULL,
+      subject     TEXT    NOT NULL DEFAULT '',
+      detail_json TEXT    NOT NULL DEFAULT '{}',
+      chain_hash  TEXT    NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS immutable_audit_log_ts ON immutable_audit_log(timestamp);
   `)
   migrateInstalledMCPs()
   migrateInstalledMCPsTag()
@@ -217,6 +231,7 @@ function db(): Database.Database {
   migrateSessionsTable()
   migrateInstalledMCPsHealth()
   migrateGatewaysContextPrefix()
+  migrateAdminUsersMustChange()
   return _db
 }
 
@@ -327,6 +342,13 @@ function migrateGatewaysContextPrefix() {
   const cols = (_db!.prepare("SELECT name FROM pragma_table_info('gateways')").all() as Array<{ name: string }>).map((c) => c.name)
   if (!cols.includes('context_prefix')) {
     _db!.exec("ALTER TABLE gateways ADD COLUMN context_prefix TEXT DEFAULT ''")
+  }
+}
+
+function migrateAdminUsersMustChange() {
+  const cols = (_db!.prepare("SELECT name FROM pragma_table_info('admin_users')").all() as Array<{ name: string }>).map((c) => c.name)
+  if (!cols.includes('must_change_password')) {
+    _db!.exec('ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0')
   }
 }
 
@@ -526,6 +548,24 @@ export function deleteSessionToken(token: string): void {
 
 export function deleteSessionsByUsername(username: string): void {
   db().prepare('DELETE FROM sessions WHERE username = ?').run(username)
+}
+
+export function getSessionUsername(token: string): string | null {
+  const row = db().prepare('SELECT username FROM sessions WHERE token = ?').get(token) as { username: string } | undefined
+  return row?.username ?? null
+}
+
+export function mustChangePassword(username: string): boolean {
+  const row = db().prepare('SELECT must_change_password FROM admin_users WHERE username = ?').get(username) as { must_change_password: number } | undefined
+  return row?.must_change_password === 1
+}
+
+export function markMustChangePassword(username: string): void {
+  db().prepare('UPDATE admin_users SET must_change_password = 1 WHERE username = ?').run(username)
+}
+
+export function clearMustChangePassword(username: string): void {
+  db().prepare('UPDATE admin_users SET must_change_password = 0 WHERE username = ?').run(username)
 }
 
 // ─── Tool filters ──────────────────────────────────────────────────────────────
@@ -952,6 +992,21 @@ export function setSetting(key: string, value: string): void {
   logChange('setting', key)
 }
 
+export function getMasterGatewayKey(): string {
+  const stored = getSetting('master_gateway_key')
+  if (stored) return stored
+  const key = randomBytes(32).toString('base64url')
+  db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('master_gateway_key', key)
+  return key
+}
+
+export function rotateMasterGatewayKey(): string {
+  const key = randomBytes(32).toString('base64url')
+  db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('master_gateway_key', key)
+  logChange('gateway_key_rotate', 'master')
+  return key
+}
+
 export function setSettings(map: Record<string, string>): void {
   const stmt = db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
   db().transaction(() => { for (const [k, v] of Object.entries(map)) stmt.run(k, v) })()
@@ -1017,10 +1072,10 @@ export function recordHealthOk(instanceId: string): void {
   if (wasAutoDisabled) logChange('health_recovered', instanceId)
 }
 
-export function recordHealthFail(instanceId: string, error: string): { autoDisabledNow: boolean } {
+export function recordHealthFail(instanceId: string, error: string): { autoDisabledNow: boolean; consecutiveFails: number } {
   const row = db().prepare('SELECT health_consecutive_fails, health_check_fail_threshold, auto_disabled FROM installed_mcps WHERE instance_id = ?')
     .get(instanceId) as { health_consecutive_fails: number; health_check_fail_threshold: number; auto_disabled: number } | undefined
-  if (!row) return { autoDisabledNow: false }
+  if (!row) return { autoDisabledNow: false, consecutiveFails: 0 }
 
   const newFails = (row.health_consecutive_fails ?? 0) + 1
   const threshold = row.health_check_fail_threshold ?? 3
@@ -1037,7 +1092,7 @@ export function recordHealthFail(instanceId: string, error: string): { autoDisab
     WHERE instance_id = ?`).run(newFails, Date.now(), error, shouldDisable ? 1 : 0, shouldDisable ? 1 : 0, instanceId)
 
   if (shouldDisable) logChange('health_auto_disabled', instanceId, `after ${newFails} fails: ${error}`)
-  return { autoDisabledNow: shouldDisable }
+  return { autoDisabledNow: shouldDisable, consecutiveFails: newFails }
 }
 
 // ─── Approval rules ───────────────────────────────────────────────────────────
@@ -1288,4 +1343,63 @@ export function getLatestSchemaTokenBreakdown(gatewayId: string | null): SchemaT
     ? (db().prepare('SELECT timestamp, gateway_id, total_tokens, breakdown_json FROM schema_token_log WHERE gateway_id IS NULL ORDER BY timestamp DESC LIMIT 1').get() as { timestamp: number; gateway_id: string | null; total_tokens: number; breakdown_json: string } | undefined)
     : (db().prepare('SELECT timestamp, gateway_id, total_tokens, breakdown_json FROM schema_token_log WHERE gateway_id = ? ORDER BY timestamp DESC LIMIT 1').get(gatewayId) as { timestamp: number; gateway_id: string | null; total_tokens: number; breakdown_json: string } | undefined)
   return r ? { timestamp: r.timestamp, gatewayId: r.gateway_id, totalTokens: r.total_tokens, breakdownJson: r.breakdown_json } : null
+}
+
+// ─── Immutable audit log ──────────────────────────────────────────────────────
+
+export interface AuditEntry {
+  id:        number
+  timestamp: number
+  actorType: ActorType
+  actorId:   string
+  eventType: string
+  subject:   string
+  detail:    Record<string, unknown>
+  chainHash: string
+}
+
+type AuditRow = { id: number; timestamp: number; actor_type: string; actor_id: string; event_type: string; subject: string; detail_json: string; chain_hash: string }
+
+function mapAuditRow(r: AuditRow): AuditEntry {
+  let detail: Record<string, unknown> = {}
+  try { detail = JSON.parse(r.detail_json) } catch { /* */ }
+  return { id: r.id, timestamp: r.timestamp, actorType: r.actor_type as ActorType, actorId: r.actor_id, eventType: r.event_type, subject: r.subject, detail, chainHash: r.chain_hash }
+}
+
+function auditGenesisHash(): string {
+  return createHmac('sha256', Buffer.from(getSecret(), 'utf-8')).update('mcpetty-audit-genesis-v1').digest('hex')
+}
+
+function auditEntryHash(prevHash: string, entry: { actorType: string; actorId: string; eventType: string; subject: string; detailJson: string; timestamp: number }): string {
+  const payload = JSON.stringify([prevHash, entry.actorType, entry.actorId, entry.eventType, entry.subject, entry.detailJson, entry.timestamp])
+  return createHmac('sha256', Buffer.from(getSecret(), 'utf-8')).update(payload).digest('hex')
+}
+
+export function writeAuditEvent(eventType: string, subject: string, detail: Record<string, unknown> = {}): void {
+  try {
+    const { actorType, actorId } = currentActor()
+    const timestamp  = Date.now()
+    const detailJson = JSON.stringify(detail)
+    db().transaction(() => {
+      const prev     = db().prepare('SELECT chain_hash FROM immutable_audit_log ORDER BY id DESC LIMIT 1').get() as { chain_hash: string } | undefined
+      const prevHash = prev?.chain_hash ?? auditGenesisHash()
+      const hash     = auditEntryHash(prevHash, { actorType, actorId, eventType, subject, detailJson, timestamp })
+      db().prepare('INSERT INTO immutable_audit_log (timestamp, actor_type, actor_id, event_type, subject, detail_json, chain_hash) VALUES (?, ?, ?, ?, ?, ?, ?)').run(timestamp, actorType, actorId, eventType, subject, detailJson, hash)
+    })()
+  } catch { /* never break operations */ }
+}
+
+export function getAuditLog(limit = 200, offset = 0): AuditEntry[] {
+  return (db().prepare('SELECT id, timestamp, actor_type, actor_id, event_type, subject, detail_json, chain_hash FROM immutable_audit_log ORDER BY id DESC LIMIT ? OFFSET ?').all(limit, offset) as AuditRow[]).map(mapAuditRow)
+}
+
+export function verifyAuditChain(): { ok: boolean; firstBrokenId?: number; total: number } {
+  const rows = db().prepare('SELECT id, timestamp, actor_type, actor_id, event_type, subject, detail_json, chain_hash FROM immutable_audit_log ORDER BY id ASC').all() as AuditRow[]
+  let prevHash = auditGenesisHash()
+  for (const row of rows) {
+    const expected = auditEntryHash(prevHash, { actorType: row.actor_type, actorId: row.actor_id, eventType: row.event_type, subject: row.subject, detailJson: row.detail_json, timestamp: row.timestamp })
+    if (expected !== row.chain_hash) return { ok: false, firstBrokenId: row.id, total: rows.length }
+    prevHash = row.chain_hash
+  }
+  return { ok: true, total: rows.length }
 }

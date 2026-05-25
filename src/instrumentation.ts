@@ -10,7 +10,7 @@ export async function register() {
     const { bootAll }               = await import('./lib/process-manager')
     const { startHealthScheduler }  = await import('./lib/health-scheduler')
     ensureDefaultUser()
-    bootAll()
+    bootAll().catch((err) => console.error('[MCPetty] bootAll error:', err))
     startHealthScheduler()
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes, createHash } from 'crypto'
 import {
-  getInstalledMCPs, isToolEnabled, logToolCall, getSettingsMap,
+  getInstalledMCPs, isToolEnabled, logToolCall, getSettingsMap, getSetting,
   getDescriptionOverrides, matchesApprovalRule, createApprovalRequest,
   getApprovalRequest, storeApprovalResult, getActionSnapshot, setActionSnapshot,
   isDiffShown, markDiffShown, logSchemaTokens,
@@ -12,6 +12,17 @@ import { NATIVE } from './native'
 import { getStdioBridge } from './process-manager'
 import { registerSSEClient, unregisterSSEClient } from './sse-bus'
 import { getCredential } from './db'
+
+const NATIVE_TIMEOUT_MS = 30_000
+
+function withNativeTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Native handler timed out after 30s: ${label}`)), NATIVE_TIMEOUT_MS)
+    ),
+  ])
+}
 
 // ── Scope — encapsulates all namespace/master-key differences ─────────────────
 
@@ -116,14 +127,10 @@ export function checkOrigin(req: NextRequest): boolean {
   if (!origin) return true
   try {
     const { hostname } = new URL(origin)
-    return (
-      hostname === 'localhost'                          ||
-      hostname === '127.0.0.1'                          ||
-      /^192\.168\./.test(hostname)                      ||
-      /^10\./.test(hostname)                            ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)      ||
-      hostname.endsWith('.local')
-    )
+    const raw     = getSetting('allowed_origins') ?? ''
+    const allowed = raw.split(',').map((s) => s.trim()).filter(Boolean)
+    if (!allowed.length) allowed.push('127.0.0.1', 'localhost')
+    return allowed.includes(hostname)
   } catch { return false }
 }
 
@@ -212,7 +219,7 @@ async function getPlatformTools(instanceId: string, type: string, port: number):
   if (entry.transport === 'native') {
     const handler = NATIVE[type]
     if (!handler) return null
-    const { ok } = await handler.ping(instanceId)
+    const { ok } = await withNativeTimeout(handler.ping(instanceId), `${type}.ping`)
     return ok ? handler.tools : null
   }
   if (entry.transport === 'stdio') {
@@ -262,7 +269,7 @@ export async function executeTool(instanceId: string, type: string, port: number
   if (entry.transport === 'native') {
     const handler = NATIVE[type]
     if (!handler) throw new Error(`No native handler for type "${type}"`)
-    return handler.call(instanceId, action, args)
+    return withNativeTimeout(handler.call(instanceId, action, args), `${type}.${action}`)
   }
   if (entry.transport === 'stdio') {
     const bridge = getStdioBridge(instanceId)

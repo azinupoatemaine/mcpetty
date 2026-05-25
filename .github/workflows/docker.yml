@@ -2,7 +2,7 @@ name: Build & Push Docker Image
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -32,6 +32,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

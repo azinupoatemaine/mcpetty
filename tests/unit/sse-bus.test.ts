@@ -119,7 +119,7 @@ describe('dead client cleanup during broadcast', () => {
       enqueue() { callCount++; throw new Error('stream closed') },
       close() {},
       error() {},
-      desiredSize: 0,
+      desiredSize: 1,
     } as unknown as ReadableStreamDefaultController<Uint8Array>
     const interval = setInterval(() => {}, 9_999_999)
     clearInterval(interval)
@@ -140,7 +140,7 @@ describe('dead client cleanup during broadcast', () => {
       enqueue() { throw new Error('stream closed') },
       close() {},
       error() {},
-      desiredSize: 0,
+      desiredSize: 1,
     } as unknown as ReadableStreamDefaultController<Uint8Array>
     const interval = setInterval(() => {}, 9_999_999)
     clearInterval(interval)

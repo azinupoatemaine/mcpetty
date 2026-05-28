@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInsights, getSchemaTokenTrend, getLatestSchemaTokenBreakdown } from '../../../lib/db'
+import { getInsights, getSchemaTokenTrend, getLatestSchemaTokenBreakdown, getInstalledMCPs } from '../../../lib/db'
 import { isAuthorizedRequest } from '../../../lib/auth'
 
 export async function GET(req: NextRequest) {
@@ -9,5 +9,6 @@ export async function GET(req: NextRequest) {
   const insights = getInsights(Math.min(days, 30), platform)
   const schemaTrend   = getSchemaTokenTrend(days)
   const latestSchema  = getLatestSchemaTokenBreakdown(null)
-  return NextResponse.json({ ...insights, schemaTrend, latestSchema })
+  const allPlatforms  = getInstalledMCPs().map((m) => ({ instanceId: m.instanceId, name: m.name }))
+  return NextResponse.json({ ...insights, schemaTrend, latestSchema, allPlatforms })
 }

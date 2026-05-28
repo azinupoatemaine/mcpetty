@@ -200,6 +200,7 @@ function NamespaceCard({
   const [keyLabel, setKeyLabel]   = useState('')
   const [keySaving, setKeySaving] = useState(false)
   const [host, setHost]           = useState('<host>')
+  const [cmdCopied, setCmdCopied] = useState(false)
 
   useEffect(() => { if (typeof window !== 'undefined') setHost(window.location.hostname) }, [])
 
@@ -322,9 +323,19 @@ function NamespaceCard({
           {/* Endpoint */}
           <div style={{ marginBottom: 18 }}>
             <div style={{ color: S.muted, fontSize: 11, marginBottom: 6, fontWeight: 'bold' }}>Endpoint</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px', marginBottom: 10 }}>
               <code style={{ flex: 1, color: S.green, fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{endpoint}</code>
               <button onClick={() => copyText(endpoint)} style={{ ...btn(S.dim), flexShrink: 0 }}>copy</button>
+            </div>
+            <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Claude Code command</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '7px 10px' }}>
+              <code style={{ flex: 1, color: S.text, fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>
+                {`claude mcp add ${ns.id} ${endpoint} --transport http --header "Authorization: Bearer <key>"`}
+              </code>
+              <button
+                onClick={() => { copyText(`claude mcp add ${ns.id} ${endpoint} --transport http --header "Authorization: Bearer <key>"`); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 2000) }}
+                style={{ ...btn(cmdCopied ? S.green : S.dim), flexShrink: 0 }}
+              >{cmdCopied ? '✓' : 'copy'}</button>
             </div>
           </div>
 

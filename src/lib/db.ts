@@ -792,7 +792,20 @@ export function getInsights(days = 7, platform?: string) {
     perAction:         tokenBurnRaw,
   }
 
-  return { summary, callsPerDay, perPlatform, topActions, recentCalls, perUA, heatmap, errorPatterns, latencyTrend, cooccurrence, tokenBurn }
+  const perGateway = db().prepare(`
+    SELECT COALESCE(g.name, ns.name, 'master') as gateway_label,
+           t.gateway_id,
+           COUNT(*) as total,
+           SUM(CASE WHEN t.outcome = 'error' THEN 1 ELSE 0 END) as errors
+    FROM tool_call_log t
+    LEFT JOIN gateways   g  ON g.id  = t.gateway_id
+    LEFT JOIN namespaces ns ON ns.id = t.gateway_id
+    WHERE t.timestamp > @since${pf}
+    GROUP BY t.gateway_id
+    ORDER BY total DESC
+  `).all(bp) as Array<{ gateway_label: string; gateway_id: string | null; total: number; errors: number }>
+
+  return { summary, callsPerDay, perPlatform, topActions, recentCalls, perUA, heatmap, errorPatterns, latencyTrend, cooccurrence, tokenBurn, perGateway }
 }
 
 export interface SessionSummary {

@@ -4,8 +4,13 @@ import type { MCPTool } from '../mcp-client'
 export const TOOLS: MCPTool[] = [
   {
     name: 'get_status',
-    description: 'List all installed MCP instances and their enabled state.',
-    inputSchema: { type: 'object', properties: {} },
+    description: 'List all installed MCP instances and their enabled state. Optionally filter by tag.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tag: { type: 'string', description: 'Filter to instances with this tag' },
+      },
+    },
   },
   {
     name: 'get_insights_summary',
@@ -70,7 +75,9 @@ export async function call(_instanceId: string, toolName: string, args: Record<s
   switch (toolName) {
     case 'get_status': {
       const mcps = getInstalledMCPs()
-      return mcps.map((m) => ({ instanceId: m.instanceId, type: m.type, name: m.name, enabled: m.enabled }))
+      const tag  = typeof args.tag === 'string' ? args.tag.trim() : undefined
+      const list = tag ? mcps.filter((m) => (m.tags ?? []).includes(tag)) : mcps
+      return list.map((m) => ({ instanceId: m.instanceId, type: m.type, name: m.name, enabled: m.enabled, tags: m.tags ?? [] }))
     }
 
     case 'get_insights_summary': {

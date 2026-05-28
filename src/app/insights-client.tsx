@@ -13,6 +13,7 @@ const PLAT_COLORS = [S.green, '#00bfff', S.yellow, '#ff69b4', '#a855f7', '#f9731
 interface Summary    { total: number; successes: number; avgLatency: number; retryRate: number }
 interface DayData    { date: string; total: number; errors: number }
 interface PlatData   { platform: string; total: number; errors: number }
+interface GatewayData { gateway_label: string; gateway_id: string | null; total: number; errors: number }
 interface ActionData { platform: string; action: string; total: number; errors: number; avgLatency: number; p95Latency: number }
 interface CallRecord { id: number; timestamp: number; platform: string; action: string; args_json: string; outcome: string; latency_ms: number; error: string | null; gateway_id: string | null; gateway_name: string | null; user_agent: string | null; result_json: string | null }
 interface UAData     { ua: string; total: number; errors: number }
@@ -31,6 +32,7 @@ interface InsightsData {
   summary:       Summary
   callsPerDay:   DayData[]
   perPlatform:   PlatData[]
+  perGateway:    GatewayData[]
   topActions:    ActionData[]
   recentCalls:   CallRecord[]
   perUA:         UAData[]
@@ -41,6 +43,7 @@ interface InsightsData {
   tokenBurn:     TokenBurn
   schemaTrend:   SchemaTokenEntry[]
   latestSchema:  SchemaTokenEntry | null
+  allPlatforms:  Array<{ instanceId: string; name: string }>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -267,6 +270,28 @@ function PlatformChart({ data }: { data: PlatData[] }) {
         <div key={d.platform} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLAT_COLORS[i % PLAT_COLORS.length], flexShrink: 0, display: 'inline-block' }} />
           <span style={{ color: S.muted, fontSize: 12, flex: 1, fontFamily: 'monospace' }}>{d.platform}</span>
+          <span style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], fontSize: 12, fontFamily: 'monospace' }}>
+            {Math.round((d.total / total) * 100)}%
+          </span>
+          <span style={{ color: S.dim, fontSize: 11 }}>{d.total}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Gateway breakdown ────────────────────────────────────────────────────────
+
+function GatewayChart({ data }: { data: GatewayData[] }) {
+  if (!data.length) return null
+  const total = data.reduce((s, d) => s + d.total, 0) || 1
+  return (
+    <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
+      <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>By gateway</div>
+      {data.map((d, i) => (
+        <div key={d.gateway_label + i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLAT_COLORS[i % PLAT_COLORS.length], flexShrink: 0, display: 'inline-block' }} />
+          <span style={{ color: S.muted, fontSize: 12, flex: 1, fontFamily: 'monospace' }}>{d.gateway_label}</span>
           <span style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], fontSize: 12, fontFamily: 'monospace' }}>
             {Math.round((d.total / total) * 100)}%
           </span>
@@ -975,15 +1000,20 @@ export default function InsightsClient() {
           <div style={{ color: S.dim, fontSize: 12, marginTop: 2 }}>What your AI agents actually did with your MCPs</div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {data && data.perPlatform.length > 1 && (
+          {data && (data.allPlatforms ?? []).length > 1 && (
             <select
               value={platform} onChange={(e) => setPlatform(e.target.value)}
               style={{ background: S.card, border: `1px solid ${platform ? S.green : '#222'}`, borderRadius: 4, color: platform ? S.green : S.dim, fontSize: 11, padding: '4px 10px', cursor: 'pointer', fontFamily: 'monospace', outline: 'none' }}
             >
               <option value="">all MCPs</option>
-              {data.perPlatform.map((p) => (
-                <option key={p.platform} value={p.platform}>{p.platform}</option>
-              ))}
+              {(data.allPlatforms ?? data.perPlatform.map((p) => ({ instanceId: p.platform, name: p.platform }))).map((p) => {
+                const hasData = data.perPlatform.some((pp) => pp.platform === p.instanceId)
+                return (
+                  <option key={p.instanceId} value={p.instanceId}>
+                    {p.name}{!hasData ? ' (no data)' : ''}
+                  </option>
+                )
+              })}
             </select>
           )}
           <div style={{ display: 'flex', gap: 6 }}>
@@ -1022,10 +1052,16 @@ export default function InsightsClient() {
               </div>
               <DayChart data={data.callsPerDay} daysArr={daysArr} />
               {data.latencyTrend.length > 0 && <LatencyTrend data={data.latencyTrend} daysArr={daysArr} />}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
-                <PlatformChart data={data.perPlatform} />
-                <TopActions    data={data.topActions} />
-              </div>
+              {(() => {
+                const showGw = (data.perGateway ?? []).length > 1
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: showGw ? '1fr 1fr 2fr' : '1fr 2fr', gap: 16 }}>
+                    <PlatformChart data={data.perPlatform} />
+                    {showGw && <GatewayChart data={data.perGateway} />}
+                    <TopActions    data={data.topActions} />
+                  </div>
+                )
+              })()}
               <RecentCalls calls={data.recentCalls} />
             </div>
           )}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Nav, Footer } from './nav'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -107,6 +107,15 @@ const SNARKY_OFFLINE = [
 ]
 const SNARKY_LOADING = ['Pinging your little servers...', 'Checking if anything survived...', 'Pretending to care about uptime...']
 const rand = (a: string[]) => a[Math.floor(Math.random() * a.length)]
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
 
 const S = {
   bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
@@ -565,11 +574,14 @@ function TagEditor({ serverId, initial }: { serverId: string; initial: string[] 
   const [saving,   setSaving]   = useState(false)
   const [dropOpen, setDropOpen] = useState(false)
 
+  useEffect(() => {
+    fetch('/api/instance-tag').then((r) => r.json()).then(setAllTags)
+  }, [])
+
   function open() {
     setDraft('')
     setEditing(true)
     setDropOpen(true)
-    fetch('/api/instance-tag').then((r) => r.json()).then(setAllTags)
   }
 
   async function persist(next: string[]) {
@@ -959,14 +971,13 @@ function ApprovalRulesPanel({ serverId }: { serverId: string }) {
 
 // ─── Server card ──────────────────────────────────────────────────────────────
 
-function ServerCard({ server, onInvoke, onRefresh, onUninstall }: { server: ServerData; onInvoke: (m: InvokeModal) => void; onRefresh: () => void; onUninstall: () => void }) {
+function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }: { server: ServerData; index: number; snarky: string; onInvoke: (m: InvokeModal) => void; onRefresh: () => void; onUninstall: () => void }) {
   const [gearOpen, setGearOpen]         = useState(false)
   const [expanded, setExpanded]         = useState(false)
   const [credOpen, setCredOpen]         = useState(false)
   const [setting, setSetting]           = useState<string | null>(null)
   const [inputVal, setInputVal]         = useState('')
   const [credStatuses, setCredStatuses] = useState<Record<string, { isSet: boolean; updatedAt: number | null }>>({})
-  const [snarky]                        = useState(server.online ? rand(SNARKY_ONLINE) : rand(SNARKY_OFFLINE))
 
   const loadCreds = useCallback(async () => {
     if (!server.credentials?.length) return
@@ -994,7 +1005,10 @@ function ServerCard({ server, onInvoke, onRefresh, onUninstall }: { server: Serv
   const statusDot    = server.autoDisabled ? S.yellow : server.online ? S.green : S.red
 
   return (
-    <div style={{ background: S.card, border: `1px solid ${statusBorder}`, borderRadius: 8, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ position: 'relative', background: S.card, border: `1px solid ${statusBorder}`, borderRadius: 8, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <span style={{ position: 'absolute', top: 6, left: 10, color: '#1e1e1e', fontSize: 9, fontFamily: 'monospace', userSelect: 'none', pointerEvents: 'none', letterSpacing: 1 }}>
+        {String(index + 1).padStart(2, '0')}
+      </span>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1258,6 +1272,8 @@ export default function Dashboard() {
   const [lastRefresh, setLast]      = useState<Date | null>(null)
   const [pendingCount, setPending]  = useState(0)
   const [approvalOpen, setApprovalOpen] = useState(false)
+  const [tagFilter, setTagFilter]   = useState<Set<string>>(new Set())
+  const [snarkies]                  = useState(() => ({ online: shuffle(SNARKY_ONLINE), offline: shuffle(SNARKY_OFFLINE) }))
 
   const fetchServers = useCallback(async () => {
     setLoading(true)
@@ -1289,6 +1305,25 @@ export default function Dashboard() {
 
   const onlineCount = servers.filter((s) => s.online).length
   const totalTools  = servers.reduce((a, s) => a + (s.tools?.length ?? 0), 0)
+
+  const allTags = useMemo(() => {
+    const tags = new Set<string>()
+    for (const s of servers) for (const t of (s.tags ?? [])) tags.add(t)
+    return [...tags].sort()
+  }, [servers])
+
+  const filteredServers = tagFilter.size === 0
+    ? servers
+    : servers.filter((s) => (s.tags ?? []).some((t) => tagFilter.has(t)))
+
+  let onlineIdx = 0, offlineIdx = 0
+  const serversWithMeta = filteredServers.map((s, i) => ({
+    s,
+    i,
+    snarky: s.online
+      ? snarkies.online[(onlineIdx++) % snarkies.online.length]
+      : snarkies.offline[(offlineIdx++) % snarkies.offline.length],
+  }))
 
   return (
     <div style={{ minHeight: '100vh', padding: '32px 24px', maxWidth: 900, margin: '0 auto', fontFamily: 'monospace' }}>
@@ -1327,22 +1362,46 @@ export default function Dashboard() {
           <div style={{ color: '#444', fontSize: 12 }}>Scroll down to the Library and pick one.</div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {servers.map((s) => (
-            <ServerCard
-              key={s.id}
-              server={s}
-              onInvoke={setModal}
-              onRefresh={fetchServers}
-              onUninstall={async () => {
-                const answer = window.prompt(`Type "yes" to uninstall "${s.name}". All credentials will be deleted.`)
-                if (answer?.toLowerCase() !== 'yes') return
-                await fetch(`/api/library?instanceId=${encodeURIComponent(s.id)}`, { method: 'DELETE' })
-                fetchServers()
-              }}
-            />
-          ))}
-        </div>
+        <>
+          {allTags.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+              {allTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setTagFilter((prev) => {
+                    const next = new Set(prev)
+                    next.has(tag) ? next.delete(tag) : next.add(tag)
+                    return next
+                  })}
+                  style={{ background: tagFilter.has(tag) ? 'var(--tint-green-bg)' : 'none', border: `1px solid ${tagFilter.has(tag) ? S.green : '#222'}`, color: tagFilter.has(tag) ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3 }}
+                >
+                  [{tag}]
+                </button>
+              ))}
+              {tagFilter.size > 0 && (
+                <button onClick={() => setTagFilter(new Set())} style={{ background: 'none', border: '1px solid #2a1a1a', color: '#884444', fontSize: 10, padding: '2px 6px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3 }}>✕ clear</button>
+              )}
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {serversWithMeta.map(({ s, i, snarky }) => (
+              <ServerCard
+                key={s.id}
+                server={s}
+                index={i}
+                snarky={snarky}
+                onInvoke={setModal}
+                onRefresh={fetchServers}
+                onUninstall={async () => {
+                  const answer = window.prompt(`Type "yes" to uninstall "${s.name}". All credentials will be deleted.`)
+                  if (answer?.toLowerCase() !== 'yes') return
+                  await fetch(`/api/library?instanceId=${encodeURIComponent(s.id)}`, { method: 'DELETE' })
+                  fetchServers()
+                }}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {/* Library is its own tab → /library */}

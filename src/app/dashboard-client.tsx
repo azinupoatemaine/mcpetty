@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
+import { useAnon } from './anon'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ function shuffle<T>(arr: T[]): T[] {
 
 function Charts({ servers }: { servers: ServerData[] }) {
   if (servers.length === 0) return null
+  const anon = useAnon()
 
   const online     = servers.filter((s) => s.online)
   const maxLatency = Math.max(...online.map((s) => s.latencyMs ?? 0), 100)
@@ -138,7 +140,7 @@ function Charts({ servers }: { servers: ServerData[] }) {
         <div style={{ color: S.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
           Servers <span style={{ color: S.dim, textTransform: 'none', letterSpacing: 0, fontSize: 10 }}>— latency · tools</span>
         </div>
-        {servers.map((s) => {
+        {servers.map((s, idx) => {
           const ms    = s.latencyMs ?? 0
           const count = s.tools?.length ?? 0
           const pct   = Math.min(ms / maxLatency * 100, 100)
@@ -146,7 +148,7 @@ function Charts({ servers }: { servers: ServerData[] }) {
           return (
             <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: s.online ? S.green : S.red, flexShrink: 0, boxShadow: s.online ? `0 0 4px ${S.green}` : undefined }} />
-              <span style={{ color: S.muted, fontSize: 12, width: 80, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+              <span style={{ color: S.muted, fontSize: 12, width: 80, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{anon ? `Instance ${idx + 1}` : s.name}</span>
               <div style={{ flex: 1, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                 {s.online && <div style={{ width: `${pct}%`, height: '100%', background: col, borderRadius: 2, transition: 'width 0.4s ease' }} />}
               </div>
@@ -938,6 +940,9 @@ function ApprovalRulesPanel({ server }: { server: ServerData }) {
 type GearTab = 'creds' | 'access' | 'approvals' | 'health' | 'calls'
 
 function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }: { server: ServerData; index: number; snarky: string; onInvoke: (m: InvokeModal) => void; onRefresh: () => void; onUninstall: () => void }) {
+  const anon                            = useAnon()
+  const dispName                        = anon ? `Instance ${index + 1}` : server.name
+  const dispId                          = anon ? `mcp-${index + 1}` : server.id
   const [gearOpen, setGearOpen]         = useState(false)
   const [gearTab,  setGearTab]          = useState<GearTab>('creds')
   const [setting, setSetting]           = useState<string | null>(null)
@@ -979,7 +984,7 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot, display: 'inline-block', boxShadow: `0 0 6px ${statusDot}`, flexShrink: 0 }} />
-          <span style={{ fontWeight: 'bold', fontSize: 16, color: S.text }}>{server.name}</span>
+          <span style={{ fontWeight: 'bold', fontSize: 16, color: S.text }}>{dispName}</span>
           {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
           <TagEditor serverId={server.id} initial={server.tags} />
         </div>
@@ -1039,11 +1044,11 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot, boxShadow: `0 0 5px ${statusDot}`, flexShrink: 0 }} />
-                      <span style={{ color: S.text, fontWeight: 'bold', fontSize: 16 }}>{server.name}</span>
+                      <span style={{ color: S.text, fontWeight: 'bold', fontSize: 16 }}>{dispName}</span>
                       {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
                     </div>
                     <div style={{ color: S.dim, fontSize: 11, marginTop: 4, paddingLeft: 16 }}>
-                      {server.type} · {server.online ? `online · ${server.latencyMs ?? 0}ms` : 'offline'} · {server.tools?.length ?? 0} tools
+                      {anon ? dispId : server.type} · {server.online ? `online · ${server.latencyMs ?? 0}ms` : 'offline'} · {server.tools?.length ?? 0} tools
                       {server.serverInfo && <span style={{ color: S.dim2 }}> · {server.serverInfo.name} {server.serverInfo.version}</span>}
                     </div>
                   </div>

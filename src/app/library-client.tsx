@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
+import { useAnon } from './anon'
 
 interface CatalogCredential {
   key: string; label: string; description: string; type: 'url' | 'secret' | 'text'; required: boolean
@@ -22,13 +23,14 @@ interface CatalogEntry {
   tools: ToolMeta[]
 }
 
-function InstanceRow({ inst, onUninstall }: { inst: InstanceRecord; onUninstall: () => void }) {
+function InstanceRow({ inst, index, onUninstall }: { inst: InstanceRecord; index: number; onUninstall: () => void }) {
+  const anon = useAnon()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${S.border}` }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: S.green, display: 'inline-block', flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
-        <span style={{ color: S.text, fontSize: 13, fontFamily: 'monospace' }}>{inst.name}</span>
-        <span style={{ color: S.dim, fontSize: 11, marginLeft: 10, fontFamily: 'monospace' }}>{inst.instanceId}</span>
+        <span style={{ color: S.text, fontSize: 13, fontFamily: 'monospace' }}>{anon ? `Instance ${index + 1}` : inst.name}</span>
+        <span style={{ color: S.dim, fontSize: 11, marginLeft: 10, fontFamily: 'monospace' }}>{anon ? `mcp-${index + 1}` : inst.instanceId}</span>
       </div>
       <span style={{ color: S.dim, fontSize: 11 }}>since {new Date(inst.installedAt).toLocaleDateString()}</span>
       <button
@@ -190,8 +192,8 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
       </div>
 
       {/* Installed instances */}
-      {entry.instances.map((inst) => (
-        <InstanceRow key={inst.instanceId} inst={inst} onUninstall={() => uninstall(inst.instanceId, inst.name)} />
+      {entry.instances.map((inst, idx) => (
+        <InstanceRow key={inst.instanceId} inst={inst} index={idx} onUninstall={() => uninstall(inst.instanceId, inst.name)} />
       ))}
 
       {/* Global tool defaults */}

@@ -35,9 +35,14 @@ export function Footer({ motto }: { motto: string }) {
 
 export function Nav({ active, approvalCount, onApprovalsClick }: { active?: ActiveTab; approvalCount?: number; onApprovalsClick?: () => void }) {
   const [light, setLight] = useState(false)
+  const [anon,  setAnon]  = useState(false)
 
   useEffect(() => {
     setLight(document.documentElement.classList.contains('light'))
+    setAnon(localStorage.getItem('mcpetty_anon') === '1')
+    const h = () => setAnon(localStorage.getItem('mcpetty_anon') === '1')
+    window.addEventListener('mcpetty-anon-change', h)
+    return () => window.removeEventListener('mcpetty-anon-change', h)
   }, [])
 
   function toggleTheme() {
@@ -53,13 +58,20 @@ export function Nav({ active, approvalCount, onApprovalsClick }: { active?: Acti
         <pre style={{ color: 'var(--green)', fontSize: 'clamp(5px, 1.1vw, 11px)', lineHeight: 1.2, marginBottom: 8, overflow: 'hidden', textShadow: '0 0 10px var(--green)', margin: 0 }}>
           {LOGO}
         </pre>
-        <button
-          onClick={toggleTheme}
-          title={light ? 'Switch to dark mode' : 'Switch to light mode'}
-          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--muted)', fontSize: 16, padding: '4px 8px', cursor: 'pointer', fontFamily: 'monospace', flexShrink: 0, marginLeft: 12, lineHeight: 1 }}
-        >
-          {light ? '☾' : '☀'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {anon && (
+            <span style={{ fontSize: 10, color: 'var(--yellow)', border: '1px solid var(--yellow)', borderRadius: 3, padding: '2px 6px', fontFamily: 'monospace', letterSpacing: 1 }}>
+              ANON
+            </span>
+          )}
+          <button
+            onClick={toggleTheme}
+            title={light ? 'Switch to dark mode' : 'Switch to light mode'}
+            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--muted)', fontSize: 16, padding: '4px 8px', cursor: 'pointer', fontFamily: 'monospace', flexShrink: 0, lineHeight: 1 }}
+          >
+            {light ? '☾' : '☀'}
+          </button>
+        </div>
       </div>
       <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 4, marginTop: 8 }}>The Ultimate BottleNeck.</div>
       <div style={{ color: 'var(--dim)', fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>

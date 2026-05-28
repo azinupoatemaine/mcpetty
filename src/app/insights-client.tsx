@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
+import { useAnon, buildAnonMap, ap } from './anon'
 
 const PLAT_COLORS = [S.green, '#00bfff', S.yellow, '#ff69b4', '#a855f7', '#f97316', '#06b6d4']
 
@@ -156,7 +157,7 @@ function DayChart({ data, daysArr }: { data: DayData[]; daysArr: string[] }) {
 
 // ─── Latency trend (SVG line chart) ──────────────────────────────────────────
 
-function LatencyTrend({ data, daysArr }: { data: LatTrend[]; daysArr: string[] }) {
+function LatencyTrend({ data, daysArr, anon, anonMap }: { data: LatTrend[]; daysArr: string[]; anon?: boolean; anonMap?: Map<string, string> }) {
   if (!data.length) return null
 
   const platforms = [...new Set(data.map((r) => r.platform))]
@@ -187,21 +188,30 @@ function LatencyTrend({ data, daysArr }: { data: LatTrend[]; daysArr: string[] }
           )
         })}
         {platforms.map((plat, pi) => {
-          const pts = data.filter((r) => r.platform === plat)
-          const points = pts
-            .map((r) => { const x = xOf(r.date); return x !== null ? `${x},${yOf(r.avgLatency)}` : null })
-            .filter(Boolean)
-            .join(' ')
-          if (!points) return null
-          const color = PLAT_COLORS[pi % PLAT_COLORS.length]
-          return <polyline key={plat} points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" opacity={0.85} />
+          const pts    = data.filter((r) => r.platform === plat)
+          const coords = pts
+            .map((r) => { const x = xOf(r.date); return x !== null ? { x, y: yOf(r.avgLatency) } : null })
+            .filter((p): p is { x: number; y: number } => p !== null)
+          if (!coords.length) return null
+          const color  = PLAT_COLORS[pi % PLAT_COLORS.length]
+          const points = coords.map((c) => `${c.x},${c.y}`).join(' ')
+          return (
+            <g key={plat}>
+              {coords.length > 1 && (
+                <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" opacity={0.85} />
+              )}
+              {coords.map((c, i) => (
+                <circle key={i} cx={c.x} cy={c.y} r={2.5} fill={color} opacity={0.9} />
+              ))}
+            </g>
+          )
         })}
       </svg>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 8 }}>
         {platforms.map((plat, pi) => (
           <span key={plat} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: S.dim }}>
             <span style={{ width: 10, height: 2, background: PLAT_COLORS[pi % PLAT_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
-            {plat}
+            {anon && anonMap ? ap(plat, anonMap) : plat}
           </span>
         ))}
       </div>
@@ -211,7 +221,7 @@ function LatencyTrend({ data, daysArr }: { data: LatTrend[]; daysArr: string[] }
 
 // ─── Top actions ──────────────────────────────────────────────────────────────
 
-function TopActions({ data }: { data: ActionData[] }) {
+function TopActions({ data, anon, anonMap }: { data: ActionData[]; anon?: boolean; anonMap?: Map<string, string> }) {
   if (!data.length) return null
   const max = Math.max(...data.map((d) => d.total), 1)
   return (
@@ -225,12 +235,13 @@ function TopActions({ data }: { data: ActionData[] }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {data.map((d) => {
-          const errRate = d.total > 0 ? Math.round((d.errors / d.total) * 100) : 0
+          const errRate   = d.total > 0 ? Math.round((d.errors / d.total) * 100) : 0
+          const platLabel = anon && anonMap ? ap(d.platform, anonMap) : d.platform
           return (
             <div key={`${d.platform}:${d.action}`}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 44px 44px', gap: '0 8px', alignItems: 'center' }}>
                 <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <span style={{ color: S.green }}>{d.platform}</span>:{d.action}
+                  <span style={{ color: S.green }}>{platLabel}</span>:{anon ? d.action : d.action}
                 </span>
                 <span style={{ color: S.muted, fontSize: 11, textAlign: 'right', fontFamily: 'monospace' }}>{d.total}</span>
                 <span style={{ color: S.dim, fontSize: 10, textAlign: 'right', fontFamily: 'monospace' }}>{d.avgLatency}ms</span>
@@ -256,7 +267,7 @@ function TopActions({ data }: { data: ActionData[] }) {
 
 // ─── Platform breakdown ───────────────────────────────────────────────────────
 
-function PlatformChart({ data }: { data: PlatData[] }) {
+function PlatformChart({ data, anon, anonMap }: { data: PlatData[]; anon?: boolean; anonMap?: Map<string, string> }) {
   if (!data.length) return null
   const total = data.reduce((s, d) => s + d.total, 0) || 1
   return (
@@ -265,7 +276,9 @@ function PlatformChart({ data }: { data: PlatData[] }) {
       {data.map((d, i) => (
         <div key={d.platform} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLAT_COLORS[i % PLAT_COLORS.length], flexShrink: 0, display: 'inline-block' }} />
-          <span style={{ color: S.muted, fontSize: 12, flex: 1, fontFamily: 'monospace' }}>{d.platform}</span>
+          <span style={{ color: S.muted, fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
+            {anon && anonMap ? ap(d.platform, anonMap) : d.platform}
+          </span>
           <span style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], fontSize: 12, fontFamily: 'monospace' }}>
             {Math.round((d.total / total) * 100)}%
           </span>
@@ -278,7 +291,7 @@ function PlatformChart({ data }: { data: PlatData[] }) {
 
 // ─── Gateway breakdown ────────────────────────────────────────────────────────
 
-function GatewayChart({ data }: { data: GatewayData[] }) {
+function GatewayChart({ data, anon }: { data: GatewayData[]; anon?: boolean }) {
   if (!data.length) return null
   const total = data.reduce((s, d) => s + d.total, 0) || 1
   return (
@@ -287,7 +300,9 @@ function GatewayChart({ data }: { data: GatewayData[] }) {
       {data.map((d, i) => (
         <div key={d.gateway_label + i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLAT_COLORS[i % PLAT_COLORS.length], flexShrink: 0, display: 'inline-block' }} />
-          <span style={{ color: S.muted, fontSize: 12, flex: 1, fontFamily: 'monospace' }}>{d.gateway_label}</span>
+          <span style={{ color: S.muted, fontSize: 12, flex: 1, fontFamily: 'monospace' }}>
+            {anon ? (d.gateway_id ? `gateway-${i + 1}` : 'master') : d.gateway_label}
+          </span>
           <span style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], fontSize: 12, fontFamily: 'monospace' }}>
             {Math.round((d.total / total) * 100)}%
           </span>
@@ -306,7 +321,7 @@ function gwLabel(c: CallRecord): string {
   return c.gateway_name ?? (c.gateway_id ? c.gateway_id : 'master')
 }
 
-function RecentCalls({ calls }: { calls: CallRecord[] }) {
+function RecentCalls({ calls, anon, anonMap }: { calls: CallRecord[]; anon?: boolean; anonMap?: Map<string, string> }) {
   const [expanded, setExpanded] = useState<number | null>(null)
   const [search, setSearch]     = useState('')
 
@@ -319,6 +334,13 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
         c.args_json.toLowerCase().includes(q)
       )
     : calls.slice(0, 20)
+
+  function dispPlatform(p: string) { return anon && anonMap ? ap(p, anonMap) : p }
+  function dispArgs(j: string) { return anon ? '{ … }' : fmtArgs(j) }
+  function dispGw(c: CallRecord) {
+    if (anon) return c.gateway_id ? 'gateway' : 'master'
+    return gwLabel(c)
+  }
 
   return (
     <>
@@ -356,13 +378,13 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
               >
                 <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace' }}>{fmtTime(c.timestamp)}</span>
                 <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <span style={{ color: S.green }}>{c.platform}</span>:{c.action}
+                  <span style={{ color: S.green }}>{dispPlatform(c.platform)}</span>:{c.action}
                 </span>
                 <span style={{ fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: c.gateway_name ? '#00bfff' : S.dim }}>
-                  {gwLabel(c)}
+                  {dispGw(c)}
                 </span>
                 <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {fmtArgs(c.args_json)}
+                  {dispArgs(c.args_json)}
                 </span>
                 <span style={{ color: S.dim, fontSize: 11, textAlign: 'right', fontFamily: 'monospace' }}>{c.latency_ms}ms</span>
                 <span style={{ textAlign: 'center', fontSize: 12 }}>
@@ -373,9 +395,9 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
                 <div style={{ padding: '10px 14px', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
                   <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Args</div>
                   <pre style={{ color: S.muted, fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                    {JSON.stringify(JSON.parse(c.args_json || '{}'), null, 2)}
+                    {anon ? '{ … redacted … }' : JSON.stringify(JSON.parse(c.args_json || '{}'), null, 2)}
                   </pre>
-                  {c.result_json && (
+                  {c.result_json && !anon && (
                     <div style={{ marginTop: 10 }}>
                       <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Result</div>
                       <pre style={{ color: '#7ec87e', fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 300, overflowY: 'auto' }}>
@@ -383,13 +405,19 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
                       </pre>
                     </div>
                   )}
+                  {c.result_json && anon && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Result</div>
+                      <div style={{ color: S.dim, fontSize: 11 }}>[ redacted ]</div>
+                    </div>
+                  )}
                   {c.error && (
                     <div style={{ marginTop: 10 }}>
                       <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Error</div>
-                      <div style={{ color: S.red, fontSize: 11 }}>{c.error}</div>
+                      <div style={{ color: S.red, fontSize: 11 }}>{anon ? '[error redacted]' : c.error}</div>
                     </div>
                   )}
-                  {c.user_agent && (
+                  {c.user_agent && !anon && (
                     <div style={{ marginTop: 8, color: S.dim, fontSize: 10 }}>
                       <span style={{ textTransform: 'uppercase', letterSpacing: 1 }}>UA</span>{' '}
                       <span style={{ fontFamily: 'monospace', color: S.dim }}>{c.user_agent}</span>
@@ -407,7 +435,7 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
 
 // ─── Sessions tab ─────────────────────────────────────────────────────────────
 
-function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
+function SessionRow({ s, anon, anonMap }: { s: SessionSummary; anon?: boolean; anonMap?: Map<string, string> }) {
   const [open, setOpen]         = useState(false)
   const [calls, setCalls]       = useState<CallRecord[] | null>(null)
   const [loading, setLoading]   = useState(false)
@@ -429,6 +457,11 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
   const durLabel  = wallClock > 0 ? fmtDuration(dur) : dur > 0 ? `~${fmtDuration(dur)}` : '—'
   const uaLabel   = parseUA(s.user_agent)
 
+  function dispPlatformList(list: string) {
+    if (!anon || !anonMap) return list
+    return list.split(',').map((p) => ap(p.trim(), anonMap)).join(', ')
+  }
+
   return (
     <div style={{ borderBottom: `1px solid ${S.border}` }}>
       <div
@@ -439,11 +472,11 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
         <span style={{ color: wallClock > 0 ? S.muted : S.dim, fontSize: 11, fontFamily: 'monospace' }} title={wallClock > 0 ? 'wall-clock duration' : 'sum of call latencies (single-call session)'}>{durLabel}</span>
         <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace', textAlign: 'right' }}>{s.calls}</span>
         <span style={{ color: S.dim, fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {s.platform_list?.split(',').map((p, i) => (
-            <span key={p} style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], marginRight: 6 }}>{p}</span>
+          {dispPlatformList(s.platform_list ?? '').split(',').map((p, i) => (
+            <span key={p} style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], marginRight: 6 }}>{p.trim()}</span>
           ))}
         </span>
-        <span style={{ color: S.dim, fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.user_agent || undefined}>{uaLabel}</span>
+        <span style={{ color: S.dim, fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={anon ? undefined : (s.user_agent || undefined)}>{anon ? parseUA(s.user_agent) : uaLabel}</span>
         <span style={{ textAlign: 'center', fontSize: 12 }}>
           {s.errors > 0 ? <span style={{ color: S.red }}>{s.errors}✗</span> : <span style={{ color: S.green }}>✓</span>}
         </span>
@@ -453,6 +486,7 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
           {loading && <div style={{ color: S.dim, fontSize: 11 }}>Loading...</div>}
           {calls && calls.map((c) => {
             const offset = c.timestamp - s.started_at
+            const platLabel = anon && anonMap ? ap(c.platform, anonMap) : c.platform
             return (
               <div key={c.id} style={{ marginBottom: 2 }}>
                 <div
@@ -461,8 +495,8 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
                 >
                   <span style={{ color: S.dim, fontSize: 10, fontFamily: 'monospace' }}>+{fmtDuration(offset)}</span>
                   <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <span style={{ color: PLAT_COLORS[s.platform_list?.split(',').indexOf(c.platform) % PLAT_COLORS.length] ?? S.green }}>{c.platform}</span>:{c.action}
-                    {' '}<span style={{ color: S.dim2, fontSize: 10 }}>{fmtArgs(c.args_json)}</span>
+                    <span style={{ color: PLAT_COLORS[s.platform_list?.split(',').indexOf(c.platform) % PLAT_COLORS.length] ?? S.green }}>{platLabel}</span>:{c.action}
+                    {' '}<span style={{ color: S.dim2, fontSize: 10 }}>{anon ? '{ … }' : fmtArgs(c.args_json)}</span>
                   </span>
                   <span style={{ color: S.dim, fontSize: 10, textAlign: 'right', fontFamily: 'monospace' }}>{c.latency_ms}ms</span>
                   <span style={{ textAlign: 'center', fontSize: 11 }}>
@@ -473,9 +507,9 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
                   <div style={{ padding: '6px 8px 8px', borderLeft: `2px solid ${S.border}`, marginLeft: 8, marginTop: 2 }}>
                     <div style={{ color: S.dim, fontSize: 9, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>Args</div>
                     <pre style={{ color: S.muted, fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      {JSON.stringify(JSON.parse(c.args_json || '{}'), null, 2)}
+                      {anon ? '{ … redacted … }' : JSON.stringify(JSON.parse(c.args_json || '{}'), null, 2)}
                     </pre>
-                    {c.result_json && (
+                    {c.result_json && !anon && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ color: S.dim, fontSize: 9, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>Result</div>
                         <pre style={{ color: '#7ec87e', fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 240, overflowY: 'auto' }}>
@@ -483,7 +517,7 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
                         </pre>
                       </div>
                     )}
-                    {c.error && <div style={{ color: S.red, fontSize: 10, marginTop: 4 }}>{c.error}</div>}
+                    {c.error && <div style={{ color: S.red, fontSize: 10, marginTop: 4 }}>{anon ? '[error redacted]' : c.error}</div>}
                   </div>
                 )}
               </div>
@@ -495,7 +529,7 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
   )
 }
 
-function SessionsTab({ days }: { days: number }) {
+function SessionsTab({ days, anon, anonMap }: { days: number; anon?: boolean; anonMap?: Map<string, string> }) {
   const [sessions, setSessions]   = useState<SessionSummary[] | null>(null)
   const [loading, setLoading]     = useState(true)
   const [cooccur, setCooccur]     = useState<CoOccur[]>([])
@@ -513,6 +547,12 @@ function SessionsTab({ days }: { days: number }) {
 
   if (loading) return <div style={{ color: S.dim, textAlign: 'center', paddingTop: 40 }}>Loading...</div>
 
+  function dispTool(t: string) {
+    if (!anon || !anonMap) return t
+    const [plat, ...rest] = t.split(':')
+    return `${ap(plat, anonMap)}:${rest.join(':')}`
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {cooccur.length > 0 && (
@@ -525,8 +565,8 @@ function SessionsTab({ days }: { days: number }) {
           </div>
           {cooccur.map((r) => (
             <div key={`${r.tool_a}${r.tool_b}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 48px', gap: '0 12px', padding: '4px 0' }}>
-              <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.tool_a}</span>
-              <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.tool_b}</span>
+              <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dispTool(r.tool_a)}</span>
+              <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dispTool(r.tool_b)}</span>
               <span style={{ color: S.green, fontSize: 11, fontFamily: 'monospace', textAlign: 'right' }}>{r.sessions}</span>
             </div>
           ))}
@@ -540,7 +580,7 @@ function SessionsTab({ days }: { days: number }) {
         {!sessions?.length ? (
           <div style={{ padding: 24, textAlign: 'center', color: S.dim, fontSize: 13 }}>No sessions with IDs found. Session IDs require an MCP-aware client.</div>
         ) : (
-          sessions.map((s) => <SessionRow key={s.session_id} s={s} days={days} />)
+          sessions.map((s) => <SessionRow key={s.session_id} s={s} anon={anon} anonMap={anonMap} />)
         )}
       </div>
     </div>
@@ -580,7 +620,7 @@ function groupErrors(data: ErrPattern[]): GroupedError[] {
   return Array.from(map.values()).sort((a, b) => b.total - a.total)
 }
 
-function ErrorsTab({ data }: { data: ErrPattern[] }) {
+function ErrorsTab({ data, anon, anonMap }: { data: ErrPattern[]; anon?: boolean; anonMap?: Map<string, string> }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   if (!data.length) return (
@@ -612,7 +652,9 @@ function ErrorsTab({ data }: { data: ErrPattern[] }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ background: '#2a0a0a', border: `1px solid #440000`, borderRadius: 3, color: S.red, fontSize: 11, padding: '1px 6px', fontFamily: 'monospace' }}>{g.total}×</span>
                   {platforms.map((p) => (
-                    <span key={p} style={{ color: S.green, fontSize: 10, fontFamily: 'monospace' }}>{p}</span>
+                    <span key={p} style={{ color: S.green, fontSize: 10, fontFamily: 'monospace' }}>
+                      {anon && anonMap ? ap(p, anonMap) : p}
+                    </span>
                   ))}
                   <span style={{ color: S.dim, fontSize: 10 }}>{fmtTime(g.lastSeen)}</span>
                   {!merged && <span style={{ color: S.dim2, fontSize: 10, marginLeft: 'auto' }}>{open ? '▼' : '▶'} {g.items.length} variant{g.items.length !== 1 ? 's' : ''}</span>}
@@ -624,9 +666,11 @@ function ErrorsTab({ data }: { data: ErrPattern[] }) {
               <div style={{ borderTop: `1px solid ${S.border}` }}>
                 {g.items.map((item, i) => (
                   <div key={i} style={{ display: 'grid', gridTemplateColumns: '150px 120px 1fr 36px', gap: '0 8px', padding: '7px 14px', borderTop: i > 0 ? `1px solid ${S.border}` : undefined, alignItems: 'start', background: S.bg, fontSize: 11 }}>
-                    <span style={{ color: S.green, fontFamily: 'monospace' }}>{item.platform}</span>
+                    <span style={{ color: S.green, fontFamily: 'monospace' }}>
+                      {anon && anonMap ? ap(item.platform, anonMap) : item.platform}
+                    </span>
                     <span style={{ color: S.muted, fontFamily: 'monospace' }}>{item.action}</span>
-                    <span style={{ color: '#884444', fontFamily: 'monospace', wordBreak: 'break-word' }}>{item.error}</span>
+                    <span style={{ color: '#884444', fontFamily: 'monospace', wordBreak: 'break-word' }}>{anon ? '[error redacted]' : item.error}</span>
                     <span style={{ color: S.dim, fontFamily: 'monospace', textAlign: 'right' }}>{item.total}</span>
                   </div>
                 ))}
@@ -694,7 +738,7 @@ function HeatmapTab({ data }: { data: HeatCell[] }) {
 
 // ─── Callers tab ──────────────────────────────────────────────────────────────
 
-function CallersTab({ perUA, perPlatform, recentCalls }: { perUA: UAData[]; perPlatform: PlatData[]; recentCalls: CallRecord[] }) {
+function CallersTab({ perUA, perPlatform, recentCalls, anon, anonMap }: { perUA: UAData[]; perPlatform: PlatData[]; recentCalls: CallRecord[]; anon?: boolean; anonMap?: Map<string, string> }) {
   const totalCalls = perUA.reduce((s, u) => s + u.total, 0) || 1
 
   const matrix = new Map<string, Map<string, number>>()
@@ -706,6 +750,8 @@ function CallersTab({ perUA, perPlatform, recentCalls }: { perUA: UAData[]; perP
   }
   const uas  = [...new Set(perUA.map((u) => parseUA(u.ua)))]
   const plats = perPlatform.slice(0, 8).map((p) => p.platform)
+
+  function dispPlat(p: string) { return anon && anonMap ? ap(p, anonMap) : p }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -727,7 +773,7 @@ function CallersTab({ perUA, perPlatform, recentCalls }: { perUA: UAData[]; perP
               {u.errors > 0 && (
                 <div style={{ color: S.red, fontSize: 10, marginTop: 2 }}>{u.errors} errors ({Math.round((u.errors / u.total) * 100)}%)</div>
               )}
-              {label !== u.ua && (
+              {!anon && label !== u.ua && (
                 <div style={{ color: S.dim2, fontSize: 9, fontFamily: 'monospace', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.ua}</div>
               )}
             </div>
@@ -743,7 +789,7 @@ function CallersTab({ perUA, perPlatform, recentCalls }: { perUA: UAData[]; perP
               <tr>
                 <th style={{ textAlign: 'left', color: S.dim, fontWeight: 'normal', padding: '4px 10px 4px 0', borderBottom: `1px solid ${S.border}` }}>UA</th>
                 {plats.map((p) => (
-                  <th key={p} style={{ textAlign: 'right', color: S.green, fontWeight: 'normal', padding: '4px 6px', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{p}</th>
+                  <th key={p} style={{ textAlign: 'right', color: S.green, fontWeight: 'normal', padding: '4px 6px', borderBottom: `1px solid ${S.border}`, whiteSpace: 'nowrap' }}>{dispPlat(p)}</th>
                 ))}
               </tr>
             </thead>
@@ -775,9 +821,11 @@ function fmtTok(n: number): string {
   return String(n)
 }
 
-function TokenBurnTab({ data }: { data: TokenBurn }) {
+function TokenBurnTab({ data, anon, anonMap }: { data: TokenBurn; anon?: boolean; anonMap?: Map<string, string> }) {
   const total    = data.totalInputTokens + data.totalOutputTokens
   const maxTotal = Math.max(...data.perAction.map((a) => a.inputTokens + a.outputTokens), 1)
+
+  function dispPlatform(p: string) { return anon && anonMap ? ap(p, anonMap) : p }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -799,7 +847,7 @@ function TokenBurnTab({ data }: { data: TokenBurn }) {
             <div key={i} style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ color: S.green, fontSize: 11, fontFamily: 'monospace' }}>
-                  {a.platform}<span style={{ color: S.dim }}>:</span>{a.action}
+                  {dispPlatform(a.platform)}<span style={{ color: S.dim }}>:</span>{a.action}
                 </span>
                 <span style={{ color: S.muted, fontSize: 11 }}>
                   {fmtTok(rowTotal)} tok · {a.calls} calls · {fmtTok(perCall)}/call
@@ -835,7 +883,7 @@ const CONTEXT_WINDOWS = [
   { label: 'Gemini',    tokens: 1_000_000 },
 ]
 
-function SchemaTab({ trend, latest }: { trend: SchemaTokenEntry[]; latest: SchemaTokenEntry | null }) {
+function SchemaTab({ trend, latest, anon, anonMap }: { trend: SchemaTokenEntry[]; latest: SchemaTokenEntry | null; anon?: boolean; anonMap?: Map<string, string> }) {
   const [expandedInst, setExpandedInst] = useState<string | null>(null)
 
   const breakdown: Record<string, number> = latest ? (() => {
@@ -871,14 +919,12 @@ function SchemaTab({ trend, latest }: { trend: SchemaTokenEntry[]; latest: Schem
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Hero */}
       <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: '24px 28px' }}>
         <div style={{ color: S.green, fontSize: 42, fontWeight: 'bold', fontFamily: 'monospace', lineHeight: 1 }}>{fmtTok(total)}</div>
         <div style={{ color: S.muted, fontSize: 13, marginTop: 6 }}>tokens consumed by tool schema per turn</div>
         <div style={{ color: S.dim, fontSize: 11, marginTop: 3 }}>charged before your conversation even starts</div>
       </div>
 
-      {/* Context window gauge */}
       <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Context window impact</div>
         {CONTEXT_WINDOWS.map((cw) => {
@@ -898,7 +944,6 @@ function SchemaTab({ trend, latest }: { trend: SchemaTokenEntry[]; latest: Schem
         })}
       </div>
 
-      {/* Per-instance breakdown */}
       {instances.length > 0 && (
         <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
           <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14 }}>Per-instance breakdown</div>
@@ -906,13 +951,14 @@ function SchemaTab({ trend, latest }: { trend: SchemaTokenEntry[]; latest: Schem
             const pct    = tokens / total
             const barPct = tokens / maxInstTok
             const expanded = expandedInst === name
+            const dispName = anon && anonMap ? ap(name, anonMap) : name
             return (
               <div key={name} style={{ marginBottom: 10 }}>
                 <div
                   onClick={() => setExpandedInst(expanded ? null : name)}
                   style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}
                 >
-                  <span style={{ color: S.green, fontSize: 12, fontFamily: 'monospace', width: 140, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                  <span style={{ color: S.green, fontSize: 12, fontFamily: 'monospace', width: 140, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dispName}</span>
                   <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${barPct * 100}%`, height: '100%', background: barColor(pct), borderRadius: 2, opacity: 0.8 }} />
                   </div>
@@ -926,7 +972,6 @@ function SchemaTab({ trend, latest }: { trend: SchemaTokenEntry[]; latest: Schem
         </div>
       )}
 
-      {/* Trend sparkline */}
       {trendArr.length > 1 && (
         <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
           <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>Schema size trend</div>
@@ -971,6 +1016,16 @@ export default function InsightsClient() {
   const [platform, setPlatform] = useState('')
   const [tab, setTab]           = useState<Tab>('overview')
   const daysArr                 = getLastNDays(days)
+  const anon                    = useAnon()
+
+  const anonMap = useMemo(() => {
+    if (!data) return new Map<string, string>()
+    const ids = [
+      ...(data.allPlatforms ?? []).map((p) => p.instanceId),
+      ...data.perPlatform.map((p) => p.platform),
+    ]
+    return buildAnonMap(ids)
+  }, [data])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1004,9 +1059,10 @@ export default function InsightsClient() {
               <option value="">all MCPs</option>
               {(data.allPlatforms ?? data.perPlatform.map((p) => ({ instanceId: p.platform, name: p.platform }))).map((p) => {
                 const hasData = data.perPlatform.some((pp) => pp.platform === p.instanceId)
+                const label   = anon ? ap(p.instanceId, anonMap) : p.name
                 return (
                   <option key={p.instanceId} value={p.instanceId}>
-                    {p.name}{!hasData ? ' (no data)' : ''}
+                    {label}{!hasData ? ' (no data)' : ''}
                   </option>
                 )
               })}
@@ -1047,26 +1103,28 @@ export default function InsightsClient() {
                 <Stat label="Retry rate"   value={`${data.summary.retryRate}%`} sub="calls after a prior error" />
               </div>
               <DayChart data={data.callsPerDay} daysArr={daysArr} />
-              {data.latencyTrend.length > 0 && <LatencyTrend data={data.latencyTrend} daysArr={daysArr} />}
+              {data.latencyTrend.length > 0 && (
+                <LatencyTrend data={data.latencyTrend} daysArr={daysArr} anon={anon} anonMap={anonMap} />
+              )}
               {(() => {
                 const showGw = (data.perGateway ?? []).length > 1
                 return (
                   <div style={{ display: 'grid', gridTemplateColumns: showGw ? '1fr 1fr 2fr' : '1fr 2fr', gap: 16 }}>
-                    <PlatformChart data={data.perPlatform} />
-                    {showGw && <GatewayChart data={data.perGateway} />}
-                    <TopActions    data={data.topActions} />
+                    <PlatformChart data={data.perPlatform} anon={anon} anonMap={anonMap} />
+                    {showGw && <GatewayChart data={data.perGateway} anon={anon} />}
+                    <TopActions    data={data.topActions}  anon={anon} anonMap={anonMap} />
                   </div>
                 )
               })()}
-              <RecentCalls calls={data.recentCalls} />
+              <RecentCalls calls={data.recentCalls} anon={anon} anonMap={anonMap} />
             </div>
           )}
-          {tab === 'sessions' && <SessionsTab days={days} />}
-          {tab === 'errors'   && <ErrorsTab   data={data.errorPatterns} />}
+          {tab === 'sessions' && <SessionsTab days={days} anon={anon} anonMap={anonMap} />}
+          {tab === 'errors'   && <ErrorsTab   data={data.errorPatterns} anon={anon} anonMap={anonMap} />}
           {tab === 'heatmap'  && <HeatmapTab  data={data.heatmap} />}
-          {tab === 'callers'  && <CallersTab  perUA={data.perUA} perPlatform={data.perPlatform} recentCalls={data.recentCalls} />}
-          {tab === 'tokens'   && <TokenBurnTab data={data.tokenBurn} />}
-          {tab === 'schema'   && <SchemaTab trend={data.schemaTrend ?? []} latest={data.latestSchema ?? null} />}
+          {tab === 'callers'  && <CallersTab  perUA={data.perUA} perPlatform={data.perPlatform} recentCalls={data.recentCalls} anon={anon} anonMap={anonMap} />}
+          {tab === 'tokens'   && <TokenBurnTab data={data.tokenBurn} anon={anon} anonMap={anonMap} />}
+          {tab === 'schema'   && <SchemaTab trend={data.schemaTrend ?? []} latest={data.latestSchema ?? null} anon={anon} anonMap={anonMap} />}
         </>
       ) : null}
 

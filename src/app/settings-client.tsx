@@ -479,6 +479,34 @@ function fmtTs(ms: number): string {
     d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
+function PrivacySection() {
+  const [on, setOn] = useState(false)
+  useEffect(() => { setOn(localStorage.getItem('mcpetty_anon') === '1') }, [])
+
+  function toggle() {
+    const next = !on
+    setOn(next)
+    localStorage.setItem('mcpetty_anon', next ? '1' : '0')
+    window.dispatchEvent(new Event('mcpetty-anon-change'))
+  }
+
+  return (
+    <Section title="Privacy Mode" sub="Anonymize the UI for safe screenshots and demos.">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <Toggle on={on} onChange={toggle} />
+        <span style={{ color: on ? S.yellow : S.dim, fontSize: 12 }}>
+          {on ? 'active — names and args masked across all pages' : 'off'}
+        </span>
+      </div>
+      <div style={{ color: S.dim2, fontSize: 11, lineHeight: 1.6 }}>
+        {on
+          ? 'Instance names show as "Instance N" / "mcp-N", call args are redacted in Insights. Reload any tab to apply. Toggle off to restore.'
+          : 'Replaces instance names with "Instance N" and "mcp-N", redacts call args in Insights. Handy for screenshots — no data is deleted.'}
+      </div>
+    </Section>
+  )
+}
+
 function ChangelogSection() {
   const [entries, setEntries] = useState<ChangelogEntry[] | null>(null)
   const [days,    setDays]    = useState(30)
@@ -645,6 +673,7 @@ export default function SettingsClient() {
           <WebhookSection    raw={data.settings} />
           <CacheSection      raw={data.settings} />
           <RedactionSection  raw={data.settings} />
+          <PrivacySection />
           <ChangelogSection />
         </>
       )}

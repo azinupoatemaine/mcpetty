@@ -8,6 +8,9 @@ import {
   validateSessionToken,
   deleteSessionToken,
   deleteSessionsByUsername,
+  getSessionUsername,
+  markMustChangePassword,
+  clearMustChangePassword,
 } from './db'
 
 const SCRYPT_OPTS = { N: 16384, r: 8, p: 1 }
@@ -25,6 +28,7 @@ export function ensureDefaultUser(): void {
   const salt = randomBytes(16).toString('hex')
   const hash = hashPassword('mcpetty', salt)
   upsertUser('admin', hash, salt)
+  markMustChangePassword('admin')
   console.log('[MCPetty] ⚠  Default credentials: admin / mcpetty')
   console.log('[MCPetty] ⚠  Change your password in dashboard settings!')
 }
@@ -58,14 +62,45 @@ export function destroySession(token: string): void {
   deleteSessionToken(token)
 }
 
+export function verifyPassword(username: string, password: string): boolean {
+  const row = getUserPasswordHash(username)
+  if (!row) return false
+  try {
+    const derived = hashPassword(password, row.salt)
+    const stored  = Buffer.isBuffer(row.hash) ? row.hash : Buffer.from(row.hash)
+    return timingSafeEqual(derived, stored)
+  } catch { return false }
+}
+
 export function changePassword(username: string, newPassword: string): void {
   const salt = randomBytes(16).toString('hex')
   const hash = hashPassword(newPassword, salt)
   upsertUser(username, hash, salt)
+  clearMustChangePassword(username)
   deleteSessionsByUsername(username)
+}
+
+function csrfSafe(req: NextRequest): boolean {
+  const host   = req.headers.get('host') ?? ''
+  const origin = req.headers.get('origin')
+  if (origin) {
+    try { return new URL(origin).host === host } catch { return false }
+  }
+  const referer = req.headers.get('referer')
+  if (referer) {
+    try { return new URL(referer).host === host } catch { return false }
+  }
+  return true
 }
 
 export function isAuthorizedRequest(req: NextRequest): boolean {
   const token = req.cookies.get(SESSION_COOKIE)?.value
-  return !!token && validateSession(token)
+  if (!token || !validateSession(token)) return false
+  if (!csrfSafe(req)) return false
+  return true
+}
+
+export function getSessionUsernameFromRequest(req: NextRequest): string {
+  const token = req.cookies.get(SESSION_COOKIE)?.value ?? ''
+  return getSessionUsername(token) ?? 'unknown'
 }

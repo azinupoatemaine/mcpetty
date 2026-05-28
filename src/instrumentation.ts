@@ -6,9 +6,11 @@ export async function register() {
     // env var per-request in an async event loop.
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
-    const { ensureDefaultUser } = await import('./lib/auth')
-    const { bootAll }           = await import('./lib/process-manager')
+    const { ensureDefaultUser }     = await import('./lib/auth')
+    const { bootAll }               = await import('./lib/process-manager')
+    const { startHealthScheduler }  = await import('./lib/health-scheduler')
     ensureDefaultUser()
-    bootAll()
+    bootAll().catch((err) => console.error('[MCPetty] bootAll error:', err))
+    startHealthScheduler()
   }
 }

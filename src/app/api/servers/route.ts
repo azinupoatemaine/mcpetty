@@ -12,11 +12,12 @@ export async function GET(req: NextRequest) {
   const installed = getInstalledMCPs()
 
   const results = await Promise.all(
-    installed.map(async ({ instanceId, type, name, port, tags }) => {
+    installed.map(async ({ instanceId, type, name, port, tags, healthCheckIntervalSeconds, healthCheckFailThreshold, healthConsecutiveFails, healthLastCheckedAt, healthLastStatus, healthLastError, autoDisabled }) => {
       const entry = findCatalogEntry(type)
       if (!entry) return null
 
-      const base = { id: instanceId, type, name, description: entry.description, credentials: entry.credentials, tags }
+      const healthFields = { healthCheckIntervalSeconds, healthCheckFailThreshold, healthConsecutiveFails, healthLastCheckedAt, healthLastStatus, healthLastError, autoDisabled }
+      const base = { id: instanceId, type, name, description: entry.description, credentials: entry.credentials, tags, ...healthFields }
 
       if (entry.transport === 'native') {
         const handler = NATIVE[type]

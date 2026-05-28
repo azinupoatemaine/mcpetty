@@ -8,6 +8,8 @@ interface Pending {
 
 // Handles the MCP JSON-RPC protocol over a subprocess stdin/stdout pipe.
 // One bridge per process — lives as long as the process.
+const MAX_BUFFER = 1_048_576  // 1 MB — guard against newline-free runaway output
+
 export class StdioBridge {
   private pending:     Map<number, Pending> = new Map()
   private nextId       = 100
@@ -18,6 +20,11 @@ export class StdioBridge {
     proc.stdout?.setEncoding('utf-8')
     proc.stdout?.on('data', (chunk: string) => {
       this.buffer += chunk
+      if (this.buffer.length > MAX_BUFFER) {
+        console.error(`[MCPetty] stdio-bridge buffer overflow (pid ${proc.pid}), dropping buffer`)
+        this.buffer = ''
+        return
+      }
       const lines  = this.buffer.split('\n')
       this.buffer  = lines.pop() ?? ''
       for (const line of lines) {

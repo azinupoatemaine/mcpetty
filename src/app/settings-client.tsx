@@ -2,19 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
-
-const S = {
-  bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
-}
-
-interface RateLimit  { gatewayId: string; maxCalls: number; windowSecs: number }
-interface Gateway    { id: string; name: string }
+import { S } from './styles'
 
 interface SettingsData {
-  settings:   Record<string, string>
-  rateLimits: RateLimit[]
-  gateways:   Gateway[]
+  settings: Record<string, string>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,7 +43,8 @@ function SaveBtn({ saving, saved, onClick }: { saving: boolean; saved: boolean; 
     <button
       onClick={onClick}
       disabled={saving}
-      style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+      className="btn-primary"
+      style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : undefined, padding: '6px 20px', fontSize: 12 }}
     >
       {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
     </button>
@@ -75,19 +67,142 @@ function useSave() {
   return { saving, saved, save }
 }
 
-const WINDOW_UNITS = [
-  { label: 'seconds', secs: 1 },
-  { label: 'minutes', secs: 60 },
-  { label: 'hours',   secs: 3600 },
-  { label: 'days',    secs: 86400 },
-]
+// ─── Master gateway section ───────────────────────────────────────────────────
 
-function secsToUnit(s: number): { amount: number; unit: number } {
-  for (let i = WINDOW_UNITS.length - 1; i >= 0; i--) {
-    if (s % WINDOW_UNITS[i].secs === 0 && Math.floor(s / WINDOW_UNITS[i].secs) > 0)
-      return { amount: s / WINDOW_UNITS[i].secs, unit: i }
+function copyText(text: string) {
+  const fallback = () => {
+    const el = document.createElement('textarea')
+    el.value = text
+    Object.assign(el.style, { position: 'fixed', opacity: '0', top: '0', left: '0' })
+    document.body.appendChild(el); el.focus(); el.select()
+    try { document.execCommand('copy') } catch { /* noop */ }
+    document.body.removeChild(el)
   }
-  return { amount: s, unit: 0 }
+  if (navigator.clipboard) navigator.clipboard.writeText(text).catch(fallback)
+  else fallback()
+}
+
+function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
+  const [on,          setOn]          = useState(raw.master_gateway_enabled === 'true')
+  const [confirming,  setConfirming]  = useState(false)
+  const [apiKey,      setApiKey]      = useState('')
+  const [host,        setHost]        = useState('<host>')
+  const [keyCopied,   setKeyCopied]   = useState(false)
+  const [cmdCopied,   setCmdCopied]   = useState(false)
+  const [rotating,    setRotating]    = useState(false)
+  const { saving, saved, save }       = useSave()
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') setHost(window.location.hostname)
+    if (raw.master_gateway_enabled === 'true') {
+      fetch('/api/gateway-key').then((r) => r.json()).then((d: { key: string }) => setApiKey(d.key ?? ''))
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function enable() {
+    await save({ settings: { master_gateway_enabled: 'true' } })
+    setOn(true); setConfirming(false)
+    const d = await fetch('/api/gateway-key').then((r) => r.json()) as { key: string }
+    setApiKey(d.key ?? '')
+  }
+
+  async function disable() {
+    await save({ settings: { master_gateway_enabled: 'false' } })
+    setOn(false)
+  }
+
+  async function rotate() {
+    if (!confirm('Rotate master gateway key? Any existing Claude Code configs using this key will break.')) return
+    setRotating(true)
+    const d = await fetch('/api/gateway-key', { method: 'POST' }).then((r) => r.json()) as { key: string }
+    setApiKey(d.key ?? '')
+    setRotating(false)
+  }
+
+  function copy(text: string, setFn: (v: boolean) => void) {
+    copyText(text); setFn(true); setTimeout(() => setFn(false), 2000)
+  }
+
+  const url     = `http://${host}:1234/mcp`
+  const masked  = apiKey ? `${apiKey.slice(0, 8)}${'•'.repeat(20)}` : '...'
+  const cmd     = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${apiKey}"` : ''
+  const cmdShow = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${masked}"` : '...'
+
+  return (
+    <Section title="Master Gateway" sub="The /mcp catch-all endpoint. Disabled by default — use namespaces instead.">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: on || confirming ? 16 : 0 }}>
+        <Toggle on={on} onChange={(v) => { if (v) setConfirming(true); else disable() }} />
+        <span style={{ color: on ? S.yellow : S.dim, fontSize: 12 }}>{on ? 'enabled' : 'disabled'}</span>
+        {saving && <span style={{ color: S.dim, fontSize: 11 }}>saving...</span>}
+        {saved  && <span style={{ color: S.green, fontSize: 11 }}>✓ saved</span>}
+      </div>
+
+      {confirming && !on && (
+        <div style={{ background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 6, padding: '14px 16px', marginBottom: 0 }}>
+          <div style={{ color: S.yellow, fontWeight: 'bold', fontSize: 13, marginBottom: 10 }}>⚠ Before you enable this</div>
+          <div style={{ color: S.muted, fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+            The master gateway at <code style={{ color: S.green }}>/mcp</code> exposes <strong>all installed MCPs</strong> with a single non-rotatable key tied to your data volume.
+            <br /><br />
+            <span style={{ color: '#cc9900' }}>Security concerns:</span>
+            <ul style={{ margin: '6px 0 0 16px', padding: 0, lineHeight: 1.8 }}>
+              <li>The key cannot be invalidated without wiping the entire data volume.</li>
+              <li>One key, every MCP, zero restrictions — the blast radius of a leak is your entire homelab.</li>
+              <li>Any leak means full access to every installed MCP — no scope, no rate limit.</li>
+              <li>No per-key audit trail: you cannot tell which connection made which call.</li>
+            </ul>
+            <br />
+            <span style={{ color: S.muted }}>Recommended: create a namespace in the <strong>Namespaces</strong> tab. Namespaces have scoped access, their own revocable keys, rate limiting, and per-namespace audit logs.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={enable}
+              style={{ background: 'none', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '5px 14px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}
+            >
+              I understand — enable anyway
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              className="btn"
+              style={{ padding: '5px 12px', fontSize: 12 }}
+            >
+              cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {on && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ background: 'var(--flag-warning-bg)', border: `1px solid var(--tint-yellow-border)`, borderRadius: 5, padding: '8px 12px', fontSize: 11, color: S.yellow, lineHeight: 1.5 }}>
+            Master key active. Anyone with this key has unrestricted access to all MCPs. Consider namespaces for scoped access.
+          </div>
+
+          <div>
+            <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>API Key</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px' }}>
+              <code style={{ color: S.muted, fontSize: 11, flex: 1, fontFamily: 'monospace', letterSpacing: 1 }}>{masked}</code>
+              <button onClick={() => copy(apiKey, setKeyCopied)} className="btn" style={{ color: keyCopied ? S.green : undefined, fontSize: 10, padding: '2px 8px' }}>
+                {keyCopied ? '✓ copied' : 'copy key'}
+              </button>
+              <button onClick={rotate} disabled={rotating} className="btn-danger" style={{ fontSize: 10, padding: '2px 8px' }}>
+                {rotating ? '...' : 'rotate'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Claude Code command</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '7px 10px' }}>
+              <code style={{ color: S.text, fontSize: 11, flex: 1, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>{cmdShow}</code>
+              <button onClick={() => copy(cmd, setCmdCopied)} className="btn" style={{ color: cmdCopied ? S.green : undefined, fontSize: 10, padding: '2px 8px' }}>
+                {cmdCopied ? '✓' : 'copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Section>
+  )
 }
 
 // ─── Injection detection section ──────────────────────────────────────────────
@@ -111,16 +226,17 @@ function InjectionSection({ raw }: { raw: Record<string, string> }) {
       </div>
       <div style={{ marginBottom: 12 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-          Extra patterns <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>— one per line, in addition to the built-in {DEFAULT_PATTERNS.length}</span>
+          Extra patterns <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>— one per line, in addition to the built-in {DEFAULT_PATTERNS.length}</span>
         </div>
         <textarea
           value={patterns}
           onChange={(e) => setPatterns(e.target.value)}
           placeholder={'custom pattern one\ncustom pattern two'}
           rows={4}
-          style={{ width: '100%', background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical' }}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted }}
         />
-        <div style={{ color: '#333', fontSize: 11, marginTop: 4 }}>
+        <div style={{ color: S.dim2, fontSize: 11, marginTop: 4 }}>
           Built-in: {DEFAULT_PATTERNS.join(' · ')}
         </div>
       </div>
@@ -175,9 +291,10 @@ function WebhookSection({ raw }: { raw: Record<string, string> }) {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://your-n8n.example.com/webhook/..."
-            style={{ flex: 1, background: S.bg, border: `1px solid #222`, color: S.text, fontFamily: 'monospace', fontSize: 12, padding: '7px 10px', borderRadius: 4, outline: 'none' }}
+            className="input"
+            style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
           />
-          <button onClick={test} disabled={testing} style={{ background: 'none', border: `1px solid #222`, borderRadius: 4, color: S.dim, fontSize: 11, padding: '4px 12px', cursor: testing ? 'not-allowed' : 'pointer', fontFamily: 'monospace', flexShrink: 0 }}>
+          <button onClick={test} disabled={testing} className="btn" style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}>
             {testing ? '...' : 'test'}
           </button>
         </div>
@@ -186,14 +303,15 @@ function WebhookSection({ raw }: { raw: Record<string, string> }) {
 
       <div style={{ marginBottom: 16 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-          Triggers <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>— one per line: platform:action or platform:* — leave empty to fire on every call</span>
+          Triggers <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>— one per line: platform:action or platform:* — leave empty to fire on every call</span>
         </div>
         <textarea
           value={triggers}
           onChange={(e) => setTriggers(e.target.value)}
           placeholder={'karakeep:create_bookmark\nwikijs:delete_page\nportainer:*'}
           rows={4}
-          style={{ width: '100%', background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical' }}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted }}
         />
       </div>
 
@@ -229,7 +347,7 @@ function CacheSection({ raw }: { raw: Record<string, string> }) {
           onChange={(e) => setTtl(Number(e.target.value))}
           style={{ width: '100%', accentColor: S.green }}
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#333', fontSize: 10, marginTop: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: S.dim2, fontSize: 10, marginTop: 4 }}>
           <span>1s</span><span>30s</span><span>60s</span><span>90s</span><span>120s</span>
         </div>
       </div>
@@ -274,13 +392,14 @@ function RedactionSection({ raw }: { raw: Record<string, string> }) {
 
       <div style={{ marginBottom: 16 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-          Key names to redact <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>— one per line</span>
+          Key names to redact <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>— one per line</span>
         </div>
         <textarea
           value={keys}
           onChange={(e) => setKeys(e.target.value)}
           rows={5}
-          style={{ width: '100%', background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical' }}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted }}
         />
       </div>
 
@@ -344,11 +463,11 @@ function MetaMCPSection() {
 interface ChangelogEntry { id: number; timestamp: number; type: string; subject: string; detail: string }
 
 const CHANGE_LABELS: Record<string, { label: string; color: string }> = {
-  mcp_install:   { label: 'install',     color: S.green },
+  mcp_install:   { label: 'install',     color: 'var(--green)' },
   mcp_uninstall: { label: 'uninstall',   color: '#ff4444' },
   tool_filter:   { label: 'filter',      color: '#ffd700' },
   desc_override: { label: 'description', color: '#00bfff' },
-  gateway_create:{ label: 'gateway+',    color: S.green },
+  gateway_create:{ label: 'gateway+',    color: 'var(--green)' },
   gateway_delete:{ label: 'gateway−',    color: '#ff4444' },
   gateway_rename:{ label: 'gateway',     color: '#ffd700' },
   setting:       { label: 'setting',     color: '#9a9a9a' },
@@ -358,6 +477,34 @@ function fmtTs(ms: number): string {
   const d = new Date(ms)
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + ' ' +
     d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
+
+function PrivacySection() {
+  const [on, setOn] = useState(false)
+  useEffect(() => { setOn(localStorage.getItem('mcpetty_anon') === '1') }, [])
+
+  function toggle() {
+    const next = !on
+    setOn(next)
+    localStorage.setItem('mcpetty_anon', next ? '1' : '0')
+    window.dispatchEvent(new Event('mcpetty-anon-change'))
+  }
+
+  return (
+    <Section title="Privacy Mode" sub="Anonymize the UI for safe screenshots and demos.">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <Toggle on={on} onChange={toggle} />
+        <span style={{ color: on ? S.yellow : S.dim, fontSize: 12 }}>
+          {on ? 'active — names and args masked across all pages' : 'off'}
+        </span>
+      </div>
+      <div style={{ color: S.dim2, fontSize: 11, lineHeight: 1.6 }}>
+        {on
+          ? 'Instance names show as "Instance N" / "mcp-N", call args are redacted in Insights. Reload any tab to apply. Toggle off to restore.'
+          : 'Replaces instance names with "Instance N" and "mcp-N", redacts call args in Insights. Handy for screenshots — no data is deleted.'}
+      </div>
+    </Section>
+  )
 }
 
 function ChangelogSection() {
@@ -387,7 +534,7 @@ function ChangelogSection() {
           {entries.map((e) => {
             const tag = CHANGE_LABELS[e.type] ?? { label: e.type, color: S.dim }
             return (
-              <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '110px 80px 1fr', gap: 8, alignItems: 'start', padding: '7px 0', borderTop: `1px solid #141414`, fontSize: 12 }}>
+              <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '110px 80px 1fr', gap: 8, alignItems: 'start', padding: '7px 0', borderTop: `1px solid ${S.border}`, fontSize: 12 }}>
                 <span style={{ color: S.dim, fontSize: 11 }}>{fmtTs(e.timestamp)}</span>
                 <span style={{ color: tag.color, fontFamily: 'monospace', fontSize: 11 }}>{tag.label}</span>
                 <span>
@@ -403,92 +550,88 @@ function ChangelogSection() {
   )
 }
 
-// ─── Rate limits section ──────────────────────────────────────────────────────
+// ─── Change password section ──────────────────────────────────────────────────
 
-function RateLimitRow({ gw, existing, onSave }: {
-  gw:       Gateway
-  existing: RateLimit | undefined
-  onSave:   (rl: RateLimit | null) => void
-}) {
-  const init        = existing ? secsToUnit(existing.windowSecs) : { amount: 1, unit: 1 }
-  const [max,  setMax]  = useState(existing?.maxCalls ?? 60)
-  const [amt,  setAmt]  = useState(init.amount)
-  const [unit, setUnit] = useState(init.unit)
-  const { saving, saved, save } = useSave()
+function ChangePasswordSection() {
+  const [current,    setCurrent]    = useState('')
+  const [next,       setNext]       = useState('')
+  const [confirm,    setConfirm]    = useState('')
+  const [saving,     setSaving]     = useState(false)
+  const [msg,        setMsg]        = useState<{ ok: boolean; text: string } | null>(null)
 
-  async function handleSave() {
-    const windowSecs = amt * WINDOW_UNITS[unit].secs
-    await save({ setRateLimit: { gatewayId: gw.id, maxCalls: max, windowSecs } })
-    onSave({ gatewayId: gw.id, maxCalls: max, windowSecs })
-  }
-
-  async function handleClear() {
-    await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deleteRateLimit: gw.id }) })
-    onSave(null)
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    setMsg(null)
+    if (next !== confirm) { setMsg({ ok: false, text: 'Passwords do not match.' }); return }
+    if (next.length < 8)  { setMsg({ ok: false, text: 'Minimum 8 characters.' }); return }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      })
+      if (res.ok) {
+        setMsg({ ok: true, text: 'Password changed. You will be logged out.' })
+        setCurrent(''); setNext(''); setConfirm('')
+        setTimeout(() => { window.location.href = '/login' }, 1500)
+      } else {
+        const data = await res.json()
+        setMsg({ ok: false, text: data.error || 'Failed.' })
+      }
+    } finally { setSaving(false) }
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 16, alignItems: 'center', padding: '12px 0', borderTop: `1px solid #141414` }}>
-      <div>
-        <div style={{ color: S.text, fontSize: 13 }}>{gw.name}</div>
-        <div style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace' }}>{gw.id}</div>
-        {existing && <div style={{ color: S.yellow, fontSize: 10, marginTop: 2 }}>● active</div>}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <input
-          type="number" min={1} value={max}
-          onChange={(e) => setMax(Number(e.target.value))}
-          style={{ width: 60, background: S.bg, border: `1px solid #222`, color: S.text, fontFamily: 'monospace', fontSize: 12, padding: '5px 8px', borderRadius: 4, outline: 'none' }}
-        />
-        <span style={{ color: S.dim, fontSize: 12 }}>calls per</span>
-        <input
-          type="number" min={1} value={amt}
-          onChange={(e) => setAmt(Number(e.target.value))}
-          style={{ width: 52, background: S.bg, border: `1px solid #222`, color: S.text, fontFamily: 'monospace', fontSize: 12, padding: '5px 8px', borderRadius: 4, outline: 'none' }}
-        />
-        <select
-          value={unit}
-          onChange={(e) => setUnit(Number(e.target.value))}
-          style={{ background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '5px 8px', borderRadius: 4, outline: 'none' }}
-        >
-          {WINDOW_UNITS.map((u, i) => <option key={i} value={i}>{u.label}</option>)}
-        </select>
-        <SaveBtn saving={saving} saved={saved} onClick={handleSave} />
-        {existing && (
-          <button onClick={handleClear} style={{ background: 'none', border: `1px solid #2a1a1a`, borderRadius: 4, color: '#884444', fontSize: 11, padding: '6px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>
-            clear
-          </button>
+    <Section title="Change Password" sub="Changing password logs out all active sessions.">
+      <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 360 }}>
+        <div>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>Current Password</div>
+          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} className="input" style={{ width: '100%', padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' as const }} />
+        </div>
+        <div>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>New Password</div>
+          <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className="input" style={{ width: '100%', padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' as const }} placeholder="min 8 characters" />
+        </div>
+        <div>
+          <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>Confirm New Password</div>
+          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="input" style={{ width: '100%', padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' as const }} />
+        </div>
+        {msg && (
+          <div style={{ background: msg.ok ? 'var(--tint-green-bg)' : 'var(--flag-danger-bg)', border: `1px solid ${msg.ok ? S.green : S.red}`, borderRadius: 4, padding: '7px 10px', color: msg.ok ? S.green : S.red, fontSize: 12 }}>
+            {msg.text}
+          </div>
         )}
-      </div>
-    </div>
+        <div>
+          <button type="submit" disabled={saving || !current || !next || !confirm}
+            className="btn-primary"
+            style={{ padding: '6px 20px', fontSize: 12, opacity: !current || !next || !confirm ? 0.5 : 1 }}>
+            {saving ? 'saving...' : 'change password'}
+          </button>
+        </div>
+      </form>
+    </Section>
   )
 }
 
-function RateLimitsSection({ gateways, rateLimits: initial }: { gateways: Gateway[]; rateLimits: RateLimit[] }) {
-  const [limits, setLimits] = useState<RateLimit[]>(initial)
+// ─── Allowed origins section ──────────────────────────────────────────────────
 
-  function onSave(updated: RateLimit | null, gatewayId: string) {
-    setLimits((prev) =>
-      updated
-        ? [...prev.filter((r) => r.gatewayId !== gatewayId), updated]
-        : prev.filter((r) => r.gatewayId !== gatewayId)
-    )
-  }
+function AllowedOriginsSection({ raw }: { raw: Record<string, string> }) {
+  const [origins, setOrigins] = useState(raw.allowed_origins ?? '')
+  const { saving, saved, save } = useSave()
 
   return (
-    <Section title="Gateway Rate Limits" sub="Limit how many tool calls a named gateway can make in a given time window. Master key is always unlimited.">
-      {gateways.length === 0 ? (
-        <div style={{ color: S.dim, fontSize: 13 }}>No named gateways yet. Create one in the Gateways tab.</div>
-      ) : (
-        gateways.map((gw) => (
-          <RateLimitRow
-            key={gw.id}
-            gw={gw}
-            existing={limits.find((r) => r.gatewayId === gw.id)}
-            onSave={(rl) => onSave(rl, gw.id)}
-          />
-        ))
-      )}
+    <Section title="Allowed Origins" sub="Hostnames allowed in the Origin header when accessing the /mcp gateway from a browser. One per line. Default (empty): 127.0.0.1 and localhost only.">
+      <textarea
+        value={origins}
+        onChange={(e) => setOrigins(e.target.value)}
+        placeholder={'127.0.0.1\nlocalhost\n192.168.1.10'}
+        rows={4}
+        className="input"
+        style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted, marginBottom: 12 }}
+      />
+      <SaveBtn saving={saving} saved={saved} onClick={() => save({ settings: {
+        allowed_origins: origins.split('\n').map((s) => s.trim()).filter(Boolean).join(','),
+      }})} />
     </Section>
   )
 }
@@ -522,12 +665,15 @@ export default function SettingsClient() {
         <div style={{ color: S.dim, textAlign: 'center', paddingTop: 80 }}>Loading...</div>
       ) : (
         <>
+          <MasterGatewaySection raw={data.settings} />
           <MetaMCPSection />
+          <ChangePasswordSection />
+          <AllowedOriginsSection raw={data.settings} />
           <InjectionSection  raw={data.settings} />
           <WebhookSection    raw={data.settings} />
           <CacheSection      raw={data.settings} />
           <RedactionSection  raw={data.settings} />
-          <RateLimitsSection gateways={data.gateways} rateLimits={data.rateLimits} />
+          <PrivacySection />
           <ChangelogSection />
         </>
       )}

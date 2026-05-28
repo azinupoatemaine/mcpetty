@@ -95,13 +95,6 @@ export function hashGatewayKey(key: string): string {
   return createHmac('sha256', masterKey()).update(key).digest('hex')
 }
 
-// Stable API key for the /mcp gateway — derived from master secret, never stored separately
-export function getGatewayApiKey(): string {
-  const key = Buffer.from(getSecret(), 'utf-8')
-  const derived = Buffer.from(hkdfSync('sha256', key, SALT, Buffer.from('mcpetty-gateway-v1'), 32))
-  return derived.toString('base64url')
-}
-
 export function decrypt(
   { encrypted, iv, tag }: Ciphertext,
   serverName: string,

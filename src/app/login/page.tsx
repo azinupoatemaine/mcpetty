@@ -11,10 +11,13 @@ const LOGO = `███╗   ███╗ ██████╗█████�
 ╚═╝     ╚═╝ ╚═════╝╚═╝     ╚══════╝   ╚═╝      ╚═╝      ╚═╝`
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState<string | null>(null)
-  const [loading, setLoading]   = useState(false)
+  const [username,    setUsername]    = useState('')
+  const [password,    setPassword]    = useState('')
+  const [error,       setError]       = useState<string | null>(null)
+  const [loading,     setLoading]     = useState(false)
+  const [step,        setStep]        = useState<'login' | 'force-change'>('login')
+  const [newPassword, setNewPassword] = useState('')
+  const [newConfirm,  setNewConfirm]  = useState('')
   const router = useRouter()
 
   async function submit(e: React.FormEvent) {
@@ -30,11 +33,42 @@ export default function LoginPage() {
       })
 
       if (res.ok) {
+        const data = await res.json()
+        if (data.requirePasswordChange) {
+          setStep('force-change')
+        } else {
+          router.push('/')
+          router.refresh()
+        }
+      } else {
+        const data = await res.json()
+        setError(data.error || 'Authentication failed.')
+      }
+    } catch {
+      setError('Could not reach server.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function submitPasswordChange(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    if (newPassword !== newConfirm) { setError('Passwords do not match.'); return }
+    if (newPassword.length < 8)     { setError('Minimum 8 characters.'); return }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword }),
+      })
+      if (res.ok) {
         router.push('/')
         router.refresh()
       } else {
         const data = await res.json()
-        setError(data.error || 'Authentication failed.')
+        setError(data.error || 'Failed to change password.')
       }
     } catch {
       setError('Could not reach server.')
@@ -54,6 +88,73 @@ export default function LoginPage() {
     borderRadius: 4,
     outline: 'none',
     boxSizing: 'border-box',
+  }
+
+  if (step === 'force-change') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', background: '#0a0a0a', fontFamily: 'monospace' }}>
+        <pre style={{ color: '#39ff14', fontSize: 'clamp(5px, 1.1vw, 11px)', lineHeight: 1.2, marginBottom: 24, textShadow: '0 0 10px #39ff14', textAlign: 'center' }}>{LOGO}</pre>
+
+        <div style={{ width: '100%', maxWidth: 360 }}>
+          <div style={{ background: '#1a1000', border: '1px solid #ff8800', borderRadius: 4, padding: '10px 14px', color: '#ff8800', fontSize: 12, marginBottom: 20 }}>
+            Default password detected. You must set a new one before continuing.
+          </div>
+
+          <form onSubmit={submitPasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <div style={{ color: '#777', fontSize: 11, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>New Password</div>
+              <input
+                type="password"
+                autoComplete="new-password"
+                autoFocus
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                style={input}
+                placeholder="min 8 characters"
+              />
+            </div>
+
+            <div>
+              <div style={{ color: '#777', fontSize: 11, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>Confirm Password</div>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newConfirm}
+                onChange={(e) => setNewConfirm(e.target.value)}
+                style={input}
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && (
+              <div style={{ background: '#1a0a0a', border: '1px solid #ff4444', borderRadius: 4, padding: '8px 12px', color: '#ff4444', fontSize: 12 }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !newPassword || !newConfirm}
+              style={{
+                background: loading ? '#1a2a1a' : '#39ff14',
+                color: '#000',
+                border: 'none',
+                padding: '10px',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+                fontSize: 14,
+                cursor: loading || !newPassword || !newConfirm ? 'not-allowed' : 'pointer',
+                borderRadius: 4,
+                marginTop: 4,
+                opacity: !newPassword || !newConfirm ? 0.5 : 1,
+              }}
+            >
+              {loading ? 'Saving...' : 'Set Password →'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   return (

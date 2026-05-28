@@ -19,6 +19,9 @@
   --flag-info-text: #888888;
   --tint-green-bg: #0a1a0a;
   --tint-green-border: #1a3a1a;
+  --tint-yellow-bg: #1a1000;
+  --tint-yellow-border: #2a2000;
+  --tint-red-border: #2a1a1a;
   --info-box-bg: #080f08;
   --info-box-border: #1a3a1a;
   --toggle-off-bg: #222222;
@@ -44,6 +47,9 @@
   --flag-info-text: #666666;
   --tint-green-bg: #f0fff4;
   --tint-green-border: #86efac;
+  --tint-yellow-bg: #fffbeb;
+  --tint-yellow-border: #fde68a;
+  --tint-red-border: #fca5a5;
   --info-box-bg: #f0fdf4;
   --info-box-border: #bbf7d0;
   --toggle-off-bg: #d1d5db;
@@ -69,4 +75,78 @@ body {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ─── Reusable component classes ─────────────────────────────────────────── */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Courier New', Courier, monospace;
+  border-radius: 4px;
+  outline: none;
+}
+.input::placeholder { color: var(--dim); }
+
+.btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-family: 'Courier New', Courier, monospace;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.btn:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.btn-primary {
+  background: var(--green);
+  color: #000;
+  border: none;
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.btn-primary:disabled { cursor: not-allowed; opacity: 0.6; }
+
+.btn-danger {
+  background: none;
+  border: 1px solid var(--tint-red-border);
+  color: #884444;
+  font-family: 'Courier New', Courier, monospace;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.btn-warn {
+  background: none;
+  border: 1px solid var(--yellow);
+  color: var(--yellow);
+  font-family: 'Courier New', Courier, monospace;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.row-green {
+  background: var(--tint-green-bg);
+  border: 1px solid var(--tint-green-border);
+  border-radius: 4px;
+}
+
+.row-yellow {
+  background: var(--tint-yellow-bg);
+  border: 1px solid var(--tint-yellow-border);
+  border-radius: 4px;
 }

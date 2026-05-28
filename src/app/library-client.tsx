@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
-
-const S = {
-  bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
-}
+import { S } from './styles'
 
 interface CatalogCredential {
   key: string; label: string; description: string; type: 'url' | 'secret' | 'text'; required: boolean
@@ -28,7 +24,7 @@ interface CatalogEntry {
 
 function InstanceRow({ inst, onUninstall }: { inst: InstanceRecord; onUninstall: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid #141414` }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${S.border}` }}>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: S.green, display: 'inline-block', flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
         <span style={{ color: S.text, fontSize: 13, fontFamily: 'monospace' }}>{inst.name}</span>
@@ -37,7 +33,8 @@ function InstanceRow({ inst, onUninstall }: { inst: InstanceRecord; onUninstall:
       <span style={{ color: S.dim, fontSize: 11 }}>since {new Date(inst.installedAt).toLocaleDateString()}</span>
       <button
         onClick={onUninstall}
-        style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace' }}
+        className="btn-danger"
+        style={{ fontSize: 11, padding: '2px 8px' }}
       >uninstall</button>
     </div>
   )
@@ -102,26 +99,31 @@ function TypeToolDefaults({ typeId, tools }: { typeId: string; tools: ToolMeta[]
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             {(['all', 'none'] as const).map((v) => (
-              <button key={v} onClick={() => setAll(v === 'all')} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.dim, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{v}</button>
+              <button key={v} onClick={() => setAll(v === 'all')} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 3, color: S.dim, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{v}</button>
             ))}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14, maxHeight: 360, overflowY: 'auto' }}>
             {tools.map((tool) => {
               const on = filters[tool.name] !== false
               return (
-                <div key={tool.name} onClick={() => toggle(tool.name)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 4, background: on ? '#0a120a' : '#111', border: `1px solid ${on ? '#1a2a1a' : '#1a1a1a'}` }}>
-                  <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.green : '#333'}`, background: on ? S.green : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div key={tool.name} onClick={() => toggle(tool.name)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 4, background: on ? 'var(--tint-green-bg)' : S.card, border: `1px solid ${on ? 'var(--tint-green-border)' : S.border}` }}>
+                  <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.green : S.border}`, background: on ? S.green : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {on && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <span style={{ color: on ? S.green : S.dim, fontSize: 12, fontFamily: 'monospace', fontWeight: 'bold' }}>{tool.name}</span>
-                    {tool.description && <div style={{ color: on ? S.muted : '#444', fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{tool.description}</div>}
+                    {tool.description && <div style={{ color: on ? S.muted : S.dim, fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{tool.description}</div>}
                   </div>
                 </div>
               )
             })}
           </div>
-          <button onClick={save} disabled={saving} style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="btn-primary"
+            style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : undefined, padding: '6px 20px', fontSize: 12 }}
+          >
             {saved ? '✓ saved' : saving ? 'saving...' : 'save defaults'}
           </button>
         </div>
@@ -172,11 +174,6 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
     onChanged()
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', background: S.bg, border: '1px solid #333', color: S.text,
-    padding: '6px 10px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none', boxSizing: 'border-box',
-  }
-
   return (
     <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 20, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: entry.instances.length > 0 ? 14 : 0 }}>
@@ -200,7 +197,7 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
       {/* Global tool defaults */}
       {entry.transport === 'http-proxy' ? (
         entry.instances.length > 0 && (
-          <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10, marginTop: 14, color: '#444', fontSize: 11, lineHeight: 1.5 }}>
+          <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10, marginTop: 14, color: S.dim, fontSize: 11, lineHeight: 1.5 }}>
             Tools are fetched live from the external server — use the Dashboard or Gateways to configure per-instance access.
           </div>
         )
@@ -210,13 +207,13 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
 
       {/* Add form */}
       {open && (
-        <div style={{ marginTop: 16, background: '#0a0a0a', border: '1px solid #222', borderRadius: 6, padding: 14 }}>
+        <div style={{ marginTop: 16, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: 14 }}>
           {error && <div style={{ color: S.red, fontSize: 12, marginBottom: 10 }}>{error}</div>}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
               <div style={{ color: S.muted, fontSize: 11, marginBottom: 5 }}>Display name <span style={{ color: S.red }}>*</span></div>
-              <input type="text" placeholder="e.g. Production" value={name} onChange={(e) => onNameChange(e.target.value)} style={inputStyle} />
+              <input type="text" placeholder="e.g. Production" value={name} onChange={(e) => onNameChange(e.target.value)} className="input" style={{ width: '100%', padding: '6px 10px', fontSize: 13, boxSizing: 'border-box' as const }} />
             </div>
             <div>
               <div style={{ color: S.muted, fontSize: 11, marginBottom: 5 }}>
@@ -228,7 +225,8 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
                 placeholder="e.g. prod"
                 value={slug}
                 onChange={(e) => onSlugChange(e.target.value)}
-                style={{ ...inputStyle, fontFamily: 'monospace', color: S.green }}
+                className="input"
+                style={{ width: '100%', padding: '6px 10px', fontSize: 13, color: S.green, boxSizing: 'border-box' as const }}
               />
             </div>
           </div>
@@ -246,16 +244,17 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
                 placeholder={cred.key}
                 value={form[cred.key] ?? ''}
                 onChange={(e) => setForm((p) => ({ ...p, [cred.key]: e.target.value }))}
-                style={inputStyle}
+                className="input"
+                style={{ width: '100%', padding: '6px 10px', fontSize: 13, boxSizing: 'border-box' as const }}
               />
             </div>
           ))}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button onClick={install} disabled={saving} style={{ background: S.green, color: '#000', border: 'none', padding: '7px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}>
+            <button onClick={install} disabled={saving} className="btn-primary" style={{ padding: '7px 18px', fontSize: 13 }}>
               {saving ? 'Installing...' : 'Install'}
             </button>
-            <button onClick={() => { setOpen(false); setError(null) }} style={{ background: 'none', border: '1px solid #222', color: S.dim, padding: '7px 12px', fontFamily: 'monospace', fontSize: 13, cursor: 'pointer', borderRadius: 4 }}>cancel</button>
+            <button onClick={() => { setOpen(false); setError(null) }} className="btn" style={{ padding: '7px 12px', fontSize: 13 }}>cancel</button>
           </div>
         </div>
       )}

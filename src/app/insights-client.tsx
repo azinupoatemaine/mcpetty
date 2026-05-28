@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
-
-const S = {
-  bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
-}
+import { S } from './styles'
 
 const PLAT_COLORS = [S.green, '#00bfff', S.yellow, '#ff69b4', '#a855f7', '#f97316', '#06b6d4']
 
@@ -329,14 +325,14 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>
           Recent calls{' '}
-          <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>
+          <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>
             — {q ? `${filtered.length} match${filtered.length === 1 ? '' : 'es'}` : `${filtered.length} latest · click to expand`}
           </span>
         </div>
         <input
           type="text" placeholder="search calls…" value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ background: S.card, border: `1px solid ${q ? S.green : '#222'}`, borderRadius: 4, color: q ? S.text : S.dim, fontSize: 11, padding: '4px 10px', fontFamily: 'monospace', outline: 'none', width: 180 }}
+          style={{ background: S.card, border: `1px solid ${q ? S.green : S.border}`, borderRadius: 4, color: q ? S.text : S.dim, fontSize: 11, padding: '4px 10px', fontFamily: 'monospace', outline: 'none', width: 180 }}
         />
       </div>
       {!calls.length ? (
@@ -356,7 +352,7 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
             <div key={c.id}>
               <div
                 onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                style={{ display: 'grid', gridTemplateColumns: COL, padding: '9px 14px', borderBottom: `1px solid #141414`, cursor: 'pointer', background: expanded === c.id ? '#141414' : 'transparent' }}
+                style={{ display: 'grid', gridTemplateColumns: COL, padding: '9px 14px', borderBottom: `1px solid ${S.border}`, cursor: 'pointer', background: expanded === c.id ? S.card : 'transparent' }}
               >
                 <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace' }}>{fmtTime(c.timestamp)}</span>
                 <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -365,7 +361,7 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
                 <span style={{ fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: c.gateway_name ? '#00bfff' : S.dim }}>
                   {gwLabel(c)}
                 </span>
-                <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {fmtArgs(c.args_json)}
                 </span>
                 <span style={{ color: S.dim, fontSize: 11, textAlign: 'right', fontFamily: 'monospace' }}>{c.latency_ms}ms</span>
@@ -374,7 +370,7 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
                 </span>
               </div>
               {expanded === c.id && (
-                <div style={{ padding: '10px 14px', background: '#0d0d0d', borderBottom: `1px solid #141414` }}>
+                <div style={{ padding: '10px 14px', background: S.bg, borderBottom: `1px solid ${S.border}` }}>
                   <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Args</div>
                   <pre style={{ color: S.muted, fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                     {JSON.stringify(JSON.parse(c.args_json || '{}'), null, 2)}
@@ -396,7 +392,7 @@ function RecentCalls({ calls }: { calls: CallRecord[] }) {
                   {c.user_agent && (
                     <div style={{ marginTop: 8, color: S.dim, fontSize: 10 }}>
                       <span style={{ textTransform: 'uppercase', letterSpacing: 1 }}>UA</span>{' '}
-                      <span style={{ fontFamily: 'monospace', color: '#444' }}>{c.user_agent}</span>
+                      <span style={{ fontFamily: 'monospace', color: S.dim }}>{c.user_agent}</span>
                     </div>
                   )}
                 </div>
@@ -434,15 +430,15 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
   const uaLabel   = parseUA(s.user_agent)
 
   return (
-    <div style={{ borderBottom: `1px solid #141414` }}>
+    <div style={{ borderBottom: `1px solid ${S.border}` }}>
       <div
         onClick={toggle}
-        style={{ display: 'grid', gridTemplateColumns: '140px 60px 50px 1fr 60px 28px', gap: '0 8px', padding: '9px 14px', cursor: 'pointer', background: open ? '#141414' : 'transparent', alignItems: 'center' }}
+        style={{ display: 'grid', gridTemplateColumns: '140px 60px 50px 1fr 60px 28px', gap: '0 8px', padding: '9px 14px', cursor: 'pointer', background: open ? S.card : 'transparent', alignItems: 'center' }}
       >
         <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace' }}>{fmtTime(s.started_at)}</span>
         <span style={{ color: wallClock > 0 ? S.muted : S.dim, fontSize: 11, fontFamily: 'monospace' }} title={wallClock > 0 ? 'wall-clock duration' : 'sum of call latencies (single-call session)'}>{durLabel}</span>
         <span style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace', textAlign: 'right' }}>{s.calls}</span>
-        <span style={{ color: '#444', fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ color: S.dim, fontSize: 10, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {s.platform_list?.split(',').map((p, i) => (
             <span key={p} style={{ color: PLAT_COLORS[i % PLAT_COLORS.length], marginRight: 6 }}>{p}</span>
           ))}
@@ -453,7 +449,7 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
         </span>
       </div>
       {open && (
-        <div style={{ background: '#0d0d0d', padding: '8px 14px 12px' }}>
+        <div style={{ background: S.bg, padding: '8px 14px 12px' }}>
           {loading && <div style={{ color: S.dim, fontSize: 11 }}>Loading...</div>}
           {calls && calls.map((c) => {
             const offset = c.timestamp - s.started_at
@@ -461,12 +457,12 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
               <div key={c.id} style={{ marginBottom: 2 }}>
                 <div
                   onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                  style={{ display: 'grid', gridTemplateColumns: '52px 1fr 52px 18px', gap: '0 8px', padding: '5px 8px', cursor: 'pointer', borderRadius: 4, background: expandedId === c.id ? '#141414' : 'transparent' }}
+                  style={{ display: 'grid', gridTemplateColumns: '52px 1fr 52px 18px', gap: '0 8px', padding: '5px 8px', cursor: 'pointer', borderRadius: 4, background: expandedId === c.id ? S.card : 'transparent' }}
                 >
                   <span style={{ color: S.dim, fontSize: 10, fontFamily: 'monospace' }}>+{fmtDuration(offset)}</span>
                   <span style={{ color: S.muted, fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <span style={{ color: PLAT_COLORS[s.platform_list?.split(',').indexOf(c.platform) % PLAT_COLORS.length] ?? S.green }}>{c.platform}</span>:{c.action}
-                    {' '}<span style={{ color: '#333', fontSize: 10 }}>{fmtArgs(c.args_json)}</span>
+                    {' '}<span style={{ color: S.dim2, fontSize: 10 }}>{fmtArgs(c.args_json)}</span>
                   </span>
                   <span style={{ color: S.dim, fontSize: 10, textAlign: 'right', fontFamily: 'monospace' }}>{c.latency_ms}ms</span>
                   <span style={{ textAlign: 'center', fontSize: 11 }}>
@@ -474,7 +470,7 @@ function SessionRow({ s, days }: { s: SessionSummary; days: number }) {
                   </span>
                 </div>
                 {expandedId === c.id && (
-                  <div style={{ padding: '6px 8px 8px', borderLeft: `2px solid #1e1e1e`, marginLeft: 8, marginTop: 2 }}>
+                  <div style={{ padding: '6px 8px 8px', borderLeft: `2px solid ${S.border}`, marginLeft: 8, marginTop: 2 }}>
                     <div style={{ color: S.dim, fontSize: 9, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>Args</div>
                     <pre style={{ color: S.muted, fontSize: 10, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                       {JSON.stringify(JSON.parse(c.args_json || '{}'), null, 2)}
@@ -619,15 +615,15 @@ function ErrorsTab({ data }: { data: ErrPattern[] }) {
                     <span key={p} style={{ color: S.green, fontSize: 10, fontFamily: 'monospace' }}>{p}</span>
                   ))}
                   <span style={{ color: S.dim, fontSize: 10 }}>{fmtTime(g.lastSeen)}</span>
-                  {!merged && <span style={{ color: '#333', fontSize: 10, marginLeft: 'auto' }}>{open ? '▼' : '▶'} {g.items.length} variant{g.items.length !== 1 ? 's' : ''}</span>}
+                  {!merged && <span style={{ color: S.dim2, fontSize: 10, marginLeft: 'auto' }}>{open ? '▼' : '▶'} {g.items.length} variant{g.items.length !== 1 ? 's' : ''}</span>}
                 </div>
                 <div style={{ color: '#cc4444', fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-word', lineHeight: 1.5 }}>{g.key}</div>
               </div>
             </div>
             {open && (
-              <div style={{ borderTop: `1px solid #1a1a1a` }}>
+              <div style={{ borderTop: `1px solid ${S.border}` }}>
                 {g.items.map((item, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '150px 120px 1fr 36px', gap: '0 8px', padding: '7px 14px', borderTop: i > 0 ? `1px solid #141414` : undefined, alignItems: 'start', background: '#0d0a0a', fontSize: 11 }}>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '150px 120px 1fr 36px', gap: '0 8px', padding: '7px 14px', borderTop: i > 0 ? `1px solid ${S.border}` : undefined, alignItems: 'start', background: S.bg, fontSize: 11 }}>
                     <span style={{ color: S.green, fontFamily: 'monospace' }}>{item.platform}</span>
                     <span style={{ color: S.muted, fontFamily: 'monospace' }}>{item.action}</span>
                     <span style={{ color: '#884444', fontFamily: 'monospace', wordBreak: 'break-word' }}>{item.error}</span>
@@ -653,7 +649,7 @@ function HeatmapTab({ data }: { data: HeatCell[] }) {
   const maxVal = Math.max(...data.map((r) => r.total), 1)
 
   function cellColor(v: number): string {
-    if (!v) return '#0f0f0f'
+    if (!v) return 'var(--bg)'
     const intensity = v / maxVal
     const g = Math.round(255 * intensity)
     const r = Math.round(57 * intensity)
@@ -663,7 +659,7 @@ function HeatmapTab({ data }: { data: HeatCell[] }) {
   return (
     <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 16 }}>
       <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Calls by hour (UTC) × day of week</div>
-      <div style={{ color: '#333', fontSize: 10, marginBottom: 16 }}>darker = more calls</div>
+      <div style={{ color: S.dim2, fontSize: 10, marginBottom: 16 }}>darker = more calls</div>
       <div style={{ display: 'flex', gap: 6 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingTop: 20 }}>
           {DOW.map((d) => (
@@ -684,7 +680,7 @@ function HeatmapTab({ data }: { data: HeatCell[] }) {
                   <div
                     key={hour}
                     title={`${DOW[dow]} ${hour}:00 — ${v} call${v !== 1 ? 's' : ''}`}
-                    style={{ flex: 1, minWidth: 18, height: 20, borderRadius: 2, background: cellColor(v), cursor: v ? 'default' : 'default' }}
+                    style={{ flex: 1, minWidth: 18, height: 20, borderRadius: 2, background: cellColor(v) }}
                   />
                 )
               })}
@@ -725,14 +721,14 @@ function CallersTab({ perUA, perPlatform, recentCalls }: { perUA: UAData[]; perP
                 <span style={{ color: S.muted, fontSize: 12, fontFamily: 'monospace' }}>{label}</span>
                 <span style={{ color: S.dim, fontSize: 11 }}>{u.total} calls · {Math.round((u.total / totalCalls) * 100)}%</span>
               </div>
-              <div style={{ height: 4, background: '#1a1a1a', borderRadius: 2 }}>
+              <div style={{ height: 4, background: 'var(--border)', borderRadius: 2 }}>
                 <div style={{ width: `${(u.total / totalCalls) * 100}%`, height: '100%', background: PLAT_COLORS[i % PLAT_COLORS.length], borderRadius: 2, opacity: 0.8 }} />
               </div>
               {u.errors > 0 && (
                 <div style={{ color: S.red, fontSize: 10, marginTop: 2 }}>{u.errors} errors ({Math.round((u.errors / u.total) * 100)}%)</div>
               )}
               {label !== u.ua && (
-                <div style={{ color: '#333', fontSize: 9, fontFamily: 'monospace', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.ua}</div>
+                <div style={{ color: S.dim2, fontSize: 9, fontFamily: 'monospace', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.ua}</div>
               )}
             </div>
           )
@@ -758,7 +754,7 @@ function CallersTab({ perUA, perPlatform, recentCalls }: { perUA: UAData[]; perP
                   {plats.map((p) => {
                     const v = matrix.get(ua)?.get(p) ?? 0
                     return (
-                      <td key={p} style={{ textAlign: 'right', padding: '5px 6px', color: v ? S.text : '#222' }}>{v || '·'}</td>
+                      <td key={p} style={{ textAlign: 'right', padding: '5px 6px', color: v ? S.text : S.dim2 }}>{v || '·'}</td>
                     )
                   })}
                 </tr>
@@ -1003,7 +999,7 @@ export default function InsightsClient() {
           {data && (data.allPlatforms ?? []).length > 1 && (
             <select
               value={platform} onChange={(e) => setPlatform(e.target.value)}
-              style={{ background: S.card, border: `1px solid ${platform ? S.green : '#222'}`, borderRadius: 4, color: platform ? S.green : S.dim, fontSize: 11, padding: '4px 10px', cursor: 'pointer', fontFamily: 'monospace', outline: 'none' }}
+              style={{ background: S.card, border: `1px solid ${platform ? S.green : S.border}`, borderRadius: 4, color: platform ? S.green : S.dim, fontSize: 11, padding: '4px 10px', cursor: 'pointer', fontFamily: 'monospace', outline: 'none' }}
             >
               <option value="">all MCPs</option>
               {(data.allPlatforms ?? data.perPlatform.map((p) => ({ instanceId: p.platform, name: p.platform }))).map((p) => {
@@ -1019,11 +1015,11 @@ export default function InsightsClient() {
           <div style={{ display: 'flex', gap: 6 }}>
             {[7, 14, 30].map((d) => (
               <button key={d} onClick={() => setDays(d)}
-                style={{ background: days === d ? S.green : 'none', color: days === d ? '#000' : S.dim, border: `1px solid ${days === d ? S.green : '#222'}`, borderRadius: 4, fontSize: 11, padding: '4px 10px', cursor: 'pointer', fontFamily: 'monospace' }}
+                style={{ background: days === d ? S.green : 'none', color: days === d ? '#000' : S.dim, border: `1px solid ${days === d ? S.green : S.border}`, borderRadius: 4, fontSize: 11, padding: '4px 10px', cursor: 'pointer', fontFamily: 'monospace' }}
               >{d}d</button>
             ))}
             <button onClick={load} disabled={loading}
-              style={{ background: 'none', border: '1px solid #222', borderRadius: 4, color: S.dim, fontSize: 11, padding: '4px 10px', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace', marginLeft: 8 }}
+              style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 4, color: S.dim, fontSize: 11, padding: '4px 10px', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace', marginLeft: 8 }}
             >{loading ? '...' : '↺'}</button>
           </div>
         </div>

@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
-
-const S = {
-  bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
-}
+import { S } from './styles'
 
 interface SettingsData {
   settings: Record<string, string>
@@ -47,7 +43,8 @@ function SaveBtn({ saving, saved, onClick }: { saving: boolean; saved: boolean; 
     <button
       onClick={onClick}
       disabled={saving}
-      style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+      className="btn-primary"
+      style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : undefined, padding: '6px 20px', fontSize: 12 }}
     >
       {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
     </button>
@@ -165,7 +162,8 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
             </button>
             <button
               onClick={() => setConfirming(false)}
-              style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '5px 12px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}
+              className="btn"
+              style={{ padding: '5px 12px', fontSize: 12 }}
             >
               cancel
             </button>
@@ -183,10 +181,10 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
             <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>API Key</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px' }}>
               <code style={{ color: S.muted, fontSize: 11, flex: 1, fontFamily: 'monospace', letterSpacing: 1 }}>{masked}</code>
-              <button onClick={() => copy(apiKey, setKeyCopied)} style={{ background: 'none', border: `1px solid ${S.border}`, color: keyCopied ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
+              <button onClick={() => copy(apiKey, setKeyCopied)} className="btn" style={{ color: keyCopied ? S.green : undefined, fontSize: 10, padding: '2px 8px' }}>
                 {keyCopied ? '✓ copied' : 'copy key'}
               </button>
-              <button onClick={rotate} disabled={rotating} style={{ background: 'none', border: `1px solid #2a1a1a`, color: '#884444', fontSize: 10, padding: '2px 8px', cursor: rotating ? 'not-allowed' : 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
+              <button onClick={rotate} disabled={rotating} className="btn-danger" style={{ fontSize: 10, padding: '2px 8px' }}>
                 {rotating ? '...' : 'rotate'}
               </button>
             </div>
@@ -196,7 +194,7 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
             <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Claude Code command</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '7px 10px' }}>
               <code style={{ color: S.text, fontSize: 11, flex: 1, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>{cmdShow}</code>
-              <button onClick={() => copy(cmd, setCmdCopied)} style={{ background: 'none', border: `1px solid ${S.border}`, color: cmdCopied ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
+              <button onClick={() => copy(cmd, setCmdCopied)} className="btn" style={{ color: cmdCopied ? S.green : undefined, fontSize: 10, padding: '2px 8px' }}>
                 {cmdCopied ? '✓' : 'copy'}
               </button>
             </div>
@@ -228,16 +226,17 @@ function InjectionSection({ raw }: { raw: Record<string, string> }) {
       </div>
       <div style={{ marginBottom: 12 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-          Extra patterns <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>— one per line, in addition to the built-in {DEFAULT_PATTERNS.length}</span>
+          Extra patterns <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>— one per line, in addition to the built-in {DEFAULT_PATTERNS.length}</span>
         </div>
         <textarea
           value={patterns}
           onChange={(e) => setPatterns(e.target.value)}
           placeholder={'custom pattern one\ncustom pattern two'}
           rows={4}
-          style={{ width: '100%', background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical' }}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted }}
         />
-        <div style={{ color: '#333', fontSize: 11, marginTop: 4 }}>
+        <div style={{ color: S.dim2, fontSize: 11, marginTop: 4 }}>
           Built-in: {DEFAULT_PATTERNS.join(' · ')}
         </div>
       </div>
@@ -292,9 +291,10 @@ function WebhookSection({ raw }: { raw: Record<string, string> }) {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://your-n8n.example.com/webhook/..."
-            style={{ flex: 1, background: S.bg, border: `1px solid #222`, color: S.text, fontFamily: 'monospace', fontSize: 12, padding: '7px 10px', borderRadius: 4, outline: 'none' }}
+            className="input"
+            style={{ flex: 1, padding: '7px 10px', fontSize: 12 }}
           />
-          <button onClick={test} disabled={testing} style={{ background: 'none', border: `1px solid #222`, borderRadius: 4, color: S.dim, fontSize: 11, padding: '4px 12px', cursor: testing ? 'not-allowed' : 'pointer', fontFamily: 'monospace', flexShrink: 0 }}>
+          <button onClick={test} disabled={testing} className="btn" style={{ fontSize: 11, padding: '4px 12px', flexShrink: 0 }}>
             {testing ? '...' : 'test'}
           </button>
         </div>
@@ -303,14 +303,15 @@ function WebhookSection({ raw }: { raw: Record<string, string> }) {
 
       <div style={{ marginBottom: 16 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-          Triggers <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>— one per line: platform:action or platform:* — leave empty to fire on every call</span>
+          Triggers <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>— one per line: platform:action or platform:* — leave empty to fire on every call</span>
         </div>
         <textarea
           value={triggers}
           onChange={(e) => setTriggers(e.target.value)}
           placeholder={'karakeep:create_bookmark\nwikijs:delete_page\nportainer:*'}
           rows={4}
-          style={{ width: '100%', background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical' }}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted }}
         />
       </div>
 
@@ -346,7 +347,7 @@ function CacheSection({ raw }: { raw: Record<string, string> }) {
           onChange={(e) => setTtl(Number(e.target.value))}
           style={{ width: '100%', accentColor: S.green }}
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#333', fontSize: 10, marginTop: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: S.dim2, fontSize: 10, marginTop: 4 }}>
           <span>1s</span><span>30s</span><span>60s</span><span>90s</span><span>120s</span>
         </div>
       </div>
@@ -391,13 +392,14 @@ function RedactionSection({ raw }: { raw: Record<string, string> }) {
 
       <div style={{ marginBottom: 16 }}>
         <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
-          Key names to redact <span style={{ color: '#333', textTransform: 'none', letterSpacing: 0 }}>— one per line</span>
+          Key names to redact <span style={{ color: S.dim2, textTransform: 'none' as const, letterSpacing: 0 }}>— one per line</span>
         </div>
         <textarea
           value={keys}
           onChange={(e) => setKeys(e.target.value)}
           rows={5}
-          style={{ width: '100%', background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical' }}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted }}
         />
       </div>
 
@@ -461,11 +463,11 @@ function MetaMCPSection() {
 interface ChangelogEntry { id: number; timestamp: number; type: string; subject: string; detail: string }
 
 const CHANGE_LABELS: Record<string, { label: string; color: string }> = {
-  mcp_install:   { label: 'install',     color: S.green },
+  mcp_install:   { label: 'install',     color: 'var(--green)' },
   mcp_uninstall: { label: 'uninstall',   color: '#ff4444' },
   tool_filter:   { label: 'filter',      color: '#ffd700' },
   desc_override: { label: 'description', color: '#00bfff' },
-  gateway_create:{ label: 'gateway+',    color: S.green },
+  gateway_create:{ label: 'gateway+',    color: 'var(--green)' },
   gateway_delete:{ label: 'gateway−',    color: '#ff4444' },
   gateway_rename:{ label: 'gateway',     color: '#ffd700' },
   setting:       { label: 'setting',     color: '#9a9a9a' },
@@ -504,7 +506,7 @@ function ChangelogSection() {
           {entries.map((e) => {
             const tag = CHANGE_LABELS[e.type] ?? { label: e.type, color: S.dim }
             return (
-              <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '110px 80px 1fr', gap: 8, alignItems: 'start', padding: '7px 0', borderTop: `1px solid #141414`, fontSize: 12 }}>
+              <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '110px 80px 1fr', gap: 8, alignItems: 'start', padding: '7px 0', borderTop: `1px solid ${S.border}`, fontSize: 12 }}>
                 <span style={{ color: S.dim, fontSize: 11 }}>{fmtTs(e.timestamp)}</span>
                 <span style={{ color: tag.color, fontFamily: 'monospace', fontSize: 11 }}>{tag.label}</span>
                 <span>
@@ -551,31 +553,30 @@ function ChangePasswordSection() {
     } finally { setSaving(false) }
   }
 
-  const inp: React.CSSProperties = { width: '100%', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none', boxSizing: 'border-box' }
-
   return (
     <Section title="Change Password" sub="Changing password logs out all active sessions.">
       <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 360 }}>
         <div>
           <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>Current Password</div>
-          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} style={inp} />
+          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} className="input" style={{ width: '100%', padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' as const }} />
         </div>
         <div>
           <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>New Password</div>
-          <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} style={inp} placeholder="min 8 characters" />
+          <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} className="input" style={{ width: '100%', padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' as const }} placeholder="min 8 characters" />
         </div>
         <div>
           <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 5 }}>Confirm New Password</div>
-          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} style={inp} />
+          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="input" style={{ width: '100%', padding: '7px 10px', fontSize: 13, boxSizing: 'border-box' as const }} />
         </div>
         {msg && (
-          <div style={{ background: msg.ok ? '#0a1a0a' : '#1a0a0a', border: `1px solid ${msg.ok ? S.green : S.red}`, borderRadius: 4, padding: '7px 10px', color: msg.ok ? S.green : S.red, fontSize: 12 }}>
+          <div style={{ background: msg.ok ? 'var(--tint-green-bg)' : 'var(--flag-danger-bg)', border: `1px solid ${msg.ok ? S.green : S.red}`, borderRadius: 4, padding: '7px 10px', color: msg.ok ? S.green : S.red, fontSize: 12 }}>
             {msg.text}
           </div>
         )}
         <div>
           <button type="submit" disabled={saving || !current || !next || !confirm}
-            style={{ background: S.green, color: '#000', border: 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving || !current || !next || !confirm ? 'not-allowed' : 'pointer', borderRadius: 4, opacity: !current || !next || !confirm ? 0.5 : 1 }}>
+            className="btn-primary"
+            style={{ padding: '6px 20px', fontSize: 12, opacity: !current || !next || !confirm ? 0.5 : 1 }}>
             {saving ? 'saving...' : 'change password'}
           </button>
         </div>
@@ -597,7 +598,8 @@ function AllowedOriginsSection({ raw }: { raw: Record<string, string> }) {
         onChange={(e) => setOrigins(e.target.value)}
         placeholder={'127.0.0.1\nlocalhost\n192.168.1.10'}
         rows={4}
-        style={{ width: '100%', background: S.bg, border: '1px solid var(--border)', color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '8px 10px', borderRadius: 4, outline: 'none', resize: 'vertical', marginBottom: 12 }}
+        className="input"
+        style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted, marginBottom: 12 }}
       />
       <SaveBtn saving={saving} saved={saved} onClick={() => save({ settings: {
         allowed_origins: origins.split('\n').map((s) => s.trim()).filter(Boolean).join(','),

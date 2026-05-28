@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
-
-const S = {
-  bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
-}
+import { S } from './styles'
 
 interface NamespaceKey   { id: string; label: string; createdAt: number }
 interface NamespaceRecord {

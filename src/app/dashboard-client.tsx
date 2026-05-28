@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Nav, Footer } from './nav'
+import { S } from './styles'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -115,11 +116,6 @@ function shuffle<T>(arr: T[]): T[] {
     [a[i], a[j]] = [a[j], a[i]]
   }
   return a
-}
-
-const S = {
-  bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', dim2: 'var(--dim2)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
 }
 
 // ─── Graphs ───────────────────────────────────────────────────────────────────
@@ -421,7 +417,8 @@ function ToolAccessPanel({ server, onInvoke }: { server: ServerData; onInvoke?: 
       <button
         onClick={save}
         disabled={saving}
-        style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+        className="btn-primary"
+      style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : undefined, padding: '6px 20px', fontSize: 12 }}
       >
         {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
       </button>
@@ -486,8 +483,8 @@ function InvokeModal({ modal, onClose }: { modal: InvokeModal; onClose: () => vo
             ))}
           </div>
         )}
-        <textarea value={args} onChange={(e) => setArgs(e.target.value)} style={{ width: '100%', background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: 10, fontFamily: 'monospace', fontSize: 12, borderRadius: 4, resize: 'vertical', minHeight: 100, outline: 'none', marginBottom: 12 }} />
-        <button onClick={invoke} disabled={loading} style={{ background: loading ? '#1a2a1a' : S.green, color: '#000', border: 'none', padding: '8px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13, cursor: loading ? 'not-allowed' : 'pointer', borderRadius: 4, width: '100%' }}>
+        <textarea value={args} onChange={(e) => setArgs(e.target.value)} className="input" style={{ width: '100%', padding: 10, fontSize: 12, resize: 'vertical', minHeight: 100, marginBottom: 12 }} />
+        <button onClick={invoke} disabled={loading} className="btn-primary" style={{ background: loading ? 'var(--tint-green-bg)' : S.green, padding: '8px 16px', fontSize: 13, width: '100%' }}>
           {loading ? 'Yeeting...' : '⚡ Yeet This Tool'}
         </button>
         {error  && <div style={{ marginTop: 16, background: 'var(--flag-danger-bg)', border: `1px solid ${S.red}`, borderRadius: 4, padding: 12, color: S.red, fontSize: 12 }}><b>it broke:</b> {error}</div>}
@@ -562,7 +559,7 @@ function TagEditor({ serverId, initial }: { serverId: string; initial: string[] 
             onBlur={() => setTimeout(() => { setEditing(false); setDropOpen(false) }, 150)}
             autoFocus
             placeholder="new tag"
-            style={{ background: S.bg, border: `1px solid ${S.border}`, color: S.text, fontFamily: 'monospace', fontSize: 11, padding: '2px 7px', borderRadius: 3, outline: 'none', width: 80 }}
+            className="input" style={{ fontSize: 11, padding: '2px 7px', width: 80, borderRadius: 3 }}
           />
           {saving && <span style={{ color: S.dim, fontSize: 10, position: 'absolute', right: -18, top: 3 }}>…</span>}
           {dropOpen && suggestions.length > 0 && (
@@ -805,7 +802,8 @@ function HealthCheckPanel({ server }: { server: ServerData }) {
       <button
         onClick={save}
         disabled={saving}
-        style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '5px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+        className="btn-primary"
+        style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : undefined, padding: '5px 18px', fontSize: 12 }}
       >
         {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
       </button>
@@ -1088,7 +1086,7 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
                       <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: 14, marginTop: 4 }}>
                         <div style={{ color: S.dim, fontSize: 11, marginBottom: 8 }}>Setting <span style={{ color: S.green }}>{setting}</span></div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <input type="password" autoComplete="new-password" value={inputVal} onChange={(e) => setInputVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveCred()} placeholder="paste value" style={{ flex: 1, background: S.card, border: `1px solid ${S.border}`, color: S.text, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }} />
+                          <input type="password" autoComplete="new-password" value={inputVal} onChange={(e) => setInputVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveCred()} placeholder="paste value" className="input" style={{ flex: 1, background: S.card, padding: '5px 8px', fontSize: 13 }} />
                           <button onClick={saveCred} style={{ background: S.green, color: '#000', border: 'none', padding: '5px 12px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}>save</button>
                           <button onClick={() => setSetting(null)} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '5px 8px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}>✕</button>
                         </div>
@@ -1225,7 +1223,7 @@ function Library({ onInstalled }: { onInstalled: () => void }) {
                         placeholder={cred.key}
                         value={formData[cred.key] ?? ''}
                         onChange={(e) => setFormData((p) => ({ ...p, [cred.key]: e.target.value }))}
-                        style={{ width: '100%', background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '6px 10px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }}
+                        className="input" style={{ padding: '6px 10px', fontSize: 13 }}
                       />
                     </div>
                   ))}

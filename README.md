@@ -13,6 +13,11 @@ MCPetty is a single Docker container that sits between your AI agent and all you
 
 One container. One endpoint. All your services.
 
+**Why native over N Docker containers:**
+- **One service to run, not N** — every MCP you add is TypeScript inside MCPetty, not a new container to pull, start, monitor, and update. Your compose file stays one service forever.
+- **Direct API calls, no subprocess overhead** — native handlers call your services' REST/GraphQL APIs in-process. No IPC sockets, no container networking hop between MCPetty and a sidecar — just your service's own network round-trip.
+- **One credential store** — all tokens and API keys live in MCPetty's AES-256-GCM vault. No env vars scattered across five docker-compose.yml files, no secrets mounted into separate containers.
+
 ---
 
 ## Deploy
@@ -65,7 +70,7 @@ Change these immediately.
 
 ## Connecting your agent
 
-The dashboard **Gateway Endpoint** section shows a ready-to-copy command. For Claude Code:
+The **Settings** page shows the master gateway endpoint and a ready-to-copy command. For Claude Code:
 
 ```bash
 claude mcp add mcpetty http://your-host:1234/mcp \
@@ -90,9 +95,10 @@ Derived from your master secret via HKDF. Stable across restarts. Changes only i
 
 ## Dashboard
 
-- **Server cards** — online/offline status, latency, security flags, credential management, tool list
+- **Server cards** — online/offline status, latency, security flags, credential management, tool list. Each card has a faint sequential number (01, 02...) in the top-left corner.
 - **Status badges** — `ONLINE` (green), `OFFLINE` (red), `AUTO-DISABLED` (amber, recoverable). Auto-disabled instances are re-enabled automatically when they come back up.
-- **Instance tags** — up to 3 tags per instance, shown as `[tag]` chips next to the server name. Injected as a prefix in the tool description the agent reads when routing. Useful for category (`[Infrastructure]`) and location (`[DC1]`) signals.
+- **Instance tags** — up to 3 tags per instance, shown as `[tag]` chips next to the server name. Injected as a prefix in the tool description the agent reads when routing. Useful for category (`[Infrastructure]`) and location (`[DC1]`) signals. Tag suggestions are pre-fetched from existing tags on mount.
+- **Tag filtering** — filter chips above the server list let you narrow to instances matching a specific tag. Multiple chips can be active; instances matching any selected tag are shown.
 - **Mini feed** — each card shows the last 5 tool calls, collapsed by default. Outcome, action, latency, relative timestamp.
 - **Tool access** — enable/disable individual tools per instance. Disabled tools are hidden from the agent entirely.
 - **Description overrides** — edit what the agent sees as a tool's description directly in the UI, per tool per instance. Overrides are injected live into the gateway schema.
@@ -100,16 +106,17 @@ Derived from your master secret via HKDF. Stable across restarts. Changes only i
 - **Health check** — configure an automatic ping interval and fail threshold per native instance. Broken instances are auto-disabled after N consecutive failures and re-enabled when they recover. Configurable in the gear modal.
 - **Approval queue** — red pulsing badge in the nav when any approvals are pending. Click to open a slide-in panel: approve or reject each request with optional reason, see full args, and browse decision history.
 - **Charts** — latency bars and tool count per server; online/total ring
+- **Snarky status lines** — each card gets a non-repeating snarky status message. The list is shuffled once on mount; all 15+ statuses are shown before any repeats.
 
 ---
 
 ## Insights
 
-Seven tabs of observability. All data comes from the tool call log — every call through the gateway is recorded.
+Seven tabs of observability. All data comes from the tool call log — every call through the gateway is recorded. The platform dropdown includes every installed MCP, including ones with no calls yet — selecting an unused one returns empty data rather than hiding it from the list.
 
 | Tab | What's there |
 |---|---|
-| **Overview** | Summary stats, calls/day chart, latency trend per platform, top actions with p95 latency, recent calls with full args + result |
+| **Overview** | Summary stats, calls/day chart, gateway/namespace breakdown (which key drove which share of calls), latency trend per platform, top actions with p95 latency, recent calls with full args + result |
 | **Sessions** | Per MCP session: wall-clock duration, call count, platforms used, caller. Expand a session to see every call in order with offsets, args, and results. |
 | **Errors** | Smart-grouped error patterns. Similar errors (same message with different IPs/ports/IDs) are folded into one card with a total count. Expand to see raw variants. |
 | **Heatmap** | 7×24 call density grid — day of week × hour of day (UTC). |
@@ -143,8 +150,8 @@ n8n can approve/reject pending actions by calling `POST /api/approvals/<id>` wit
 ### Argument Redaction
 Replaces specified argument key names (e.g. `token`, `password`) with `[REDACTED]` in the insights log. Execution always gets the real values. Protects secrets from appearing in drill-down views.
 
-### Gateway Rate Limits
-Limit calls per named gateway in a configurable time window. Master key is always unlimited.
+### Master Gateway
+The master gateway (`/mcp`) is **disabled by default**. It accepts a single API key derived from your master secret and grants unrestricted access to every installed MCP with no per-instance scoping. When enabling it, the dashboard presents a confirmation screen listing the security concerns — one key, every MCP, zero restrictions, full homelab blast radius on leak. The key, a rotate button, and a ready-to-copy Claude Code command are shown only while enabled. For most setups, namespace keys are the better path: revocable, scoped, and independently rotatable without touching the data volume.
 
 ### Meta MCP
 Toggle that installs MCPetty itself as a read-only MCP tool. Lets your AI agent query MCPetty — installed servers, call history, error patterns, sessions — without leaving the conversation. Actions: `get_status`, `get_insights_summary`, `get_recent_calls`, `get_error_patterns`, `get_top_actions`, `get_sessions`.
@@ -193,6 +200,7 @@ Create named API keys (beyond the master key) with individual rate limits and sc
 - **Instance scope** — explicitly assign which MCP instances a key can reach.
 - **Action scope** — per-gateway tool overrides. Restrict a key to specific actions on each instance.
 - **Agent context prefix** — write a text prefix that gets prepended to every tool response sent through this gateway. Steers the agent's behaviour at the response layer — no system prompt access needed. Example: `"This is PRODUCTION. All destructive operations are irreversible."` Configured in the gateway's expanded card with a char counter and token estimate.
+- **Claude Code command** — each namespace card shows a ready-to-copy `claude mcp add` command with the correct endpoint and transport. Copy it directly into your terminal; the key placeholder reminds you to swap it in.
 
 ## Human-in-the-loop Approval Queue
 

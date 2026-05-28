@@ -36,7 +36,7 @@ interface ServerData {
   flags: SecurityFlag[]
   error?: string
   latencyMs?: number
-  credentials: Array<{ key: string; label: string; type: string; required: boolean }>
+  credentials: Array<{ key: string; label: string; description?: string; type: string; required: boolean }>
   tags?: string[]
   healthCheckIntervalSeconds?: number
   healthCheckFailThreshold?: number
@@ -189,8 +189,8 @@ function relTs(ms: number): string {
   return `${Math.round(d / 86400000)}d ago`
 }
 
-function MiniFeed({ serverId }: { serverId: string }) {
-  const [open,   setOpen]   = useState(false)
+function MiniFeed({ serverId, forceOpen }: { serverId: string; forceOpen?: boolean }) {
+  const [open,   setOpen]   = useState(!!forceOpen)
   const [loaded, setLoaded] = useState(false)
   const [calls,  setCalls]  = useState<MiniCall[]>([])
 
@@ -200,6 +200,25 @@ function MiniFeed({ serverId }: { serverId: string }) {
       .then((r) => r.json())
       .then((d) => { setCalls((d.recentCalls ?? []).slice(0, 5)); setLoaded(true) })
   }, [open, loaded, serverId])
+
+  const rows = !loaded ? (
+    <div style={{ color: S.dim, fontSize: 11 }}>loading...</div>
+  ) : calls.length === 0 ? (
+    <div style={{ color: S.dim, fontSize: 11 }}>no calls in the last 7 days</div>
+  ) : (
+    <div>
+      {calls.map((c) => (
+        <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '8px 1fr 44px 60px', gap: 6, alignItems: 'center', padding: '4px 0', borderTop: '1px solid #141414', fontSize: 11 }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: c.outcome === 'error' ? S.red : S.green, display: 'inline-block' }} />
+          <span style={{ color: c.outcome === 'error' ? '#aa4444' : S.muted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.error ?? undefined}>{c.action}</span>
+          <span style={{ color: S.dim, textAlign: 'right' }}>{c.latency_ms}ms</span>
+          <span style={{ color: '#333', textAlign: 'right' }}>{relTs(c.timestamp)}</span>
+        </div>
+      ))}
+    </div>
+  )
+
+  if (forceOpen) return rows
 
   return (
     <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
@@ -214,32 +233,14 @@ function MiniFeed({ serverId }: { serverId: string }) {
           </span>
         )}
       </button>
-      {open && (
-        <div style={{ marginTop: 6 }}>
-          {!loaded ? (
-            <div style={{ color: S.dim, fontSize: 11 }}>loading...</div>
-          ) : calls.length === 0 ? (
-            <div style={{ color: S.dim, fontSize: 11 }}>no calls in the last 7 days</div>
-          ) : (
-            calls.map((c) => (
-              <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '8px 1fr 44px 60px', gap: 6, alignItems: 'center', padding: '4px 0', borderTop: '1px solid #141414', fontSize: 11 }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: c.outcome === 'error' ? S.red : S.green, display: 'inline-block' }} />
-                <span style={{ color: c.outcome === 'error' ? '#aa4444' : S.muted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.error ?? undefined}>{c.action}</span>
-                <span style={{ color: S.dim, textAlign: 'right' }}>{c.latency_ms}ms</span>
-                <span style={{ color: '#333', textAlign: 'right' }}>{relTs(c.timestamp)}</span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      {open && <div style={{ marginTop: 6 }}>{rows}</div>}
     </div>
   )
 }
 
 // ─── Tool access panel ────────────────────────────────────────────────────────
 
-function ToolAccessPanel({ server }: { server: ServerData }) {
-  const [open, setOpen]         = useState(false)
+function ToolAccessPanel({ server, onInvoke }: { server: ServerData; onInvoke?: (tool: MCPTool) => void }) {
   const tools                   = server.tools ?? []
   const [typeFilters, setTypeFilters] = useState<Record<string, boolean>>({})
   const [instFilters, setInstFilters] = useState<Record<string, boolean>>({})
@@ -334,99 +335,96 @@ function ToolAccessPanel({ server }: { server: ServerData }) {
     setFilters(next)
   }
 
-  if (!tools.length) return null
+  if (!tools.length) return <div style={{ color: S.dim, fontSize: 12 }}>No tools available (instance offline).</div>
 
   const enabledCount  = Object.values(filters).filter(Boolean).length
   const hasOverrides  = Object.keys(instFilters).length > 0
 
   return (
-    <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', fontFamily: 'monospace', padding: 0, display: 'flex', alignItems: 'center', gap: 8 }}
-      >
-        {open ? '▼' : '▶'} tool access
-        <span style={{ color: enabledCount === tools.length ? S.green : S.yellow, fontSize: 11 }}>
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        {(['all', 'none'] as const).map((v) => (
+          <button key={v} onClick={() => setAll(v === 'all')} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.dim, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{v}</button>
+        ))}
+        {hasOverrides && (
+          <button onClick={reset} style={{ background: 'none', border: '1px solid #1a1a2a', borderRadius: 3, color: '#6666aa', fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>reset to type defaults</button>
+        )}
+        <span style={{ marginLeft: 'auto', color: enabledCount === tools.length ? S.green : S.yellow, fontSize: 11 }}>
           {enabledCount}/{tools.length} exposed
         </span>
-        {hasOverrides && <span style={{ color: '#888', fontSize: 10 }}>· instance overrides active</span>}
-      </button>
+        {hasOverrides && <span style={{ color: '#555', fontSize: 10 }}>· overrides active</span>}
+      </div>
 
-      {open && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
-            {(['all', 'none'] as const).map((v) => (
-              <button key={v} onClick={() => setAll(v === 'all')} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.dim, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{v}</button>
-            ))}
-            {hasOverrides && (
-              <button onClick={reset} style={{ background: 'none', border: '1px solid #1a1a2a', borderRadius: 3, color: '#6666aa', fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace', marginLeft: 4 }}>reset to type defaults</button>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-            {tools.map((tool) => {
-              const on         = filters[tool.name] !== false
-              const isOverride = tool.name in instFilters
-              const typeDefault = tool.name in typeFilters ? typeFilters[tool.name] : true
-              const showBadge  = isOverride || filters[tool.name] !== typeDefault
-              return (
-                <div
-                  key={tool.name}
-                  onClick={() => toggle(tool.name)}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 4, background: on ? '#0a120a' : '#111', border: `1px solid ${on ? '#1a2a1a' : '#1a1a1a'}` }}
-                >
-                  <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.green : '#333'}`, background: on ? S.green : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {on && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ color: on ? S.green : S.dim, fontSize: 12, fontWeight: 'bold', fontFamily: 'monospace' }}>{tool.name}</span>
-                      {showBadge && <span style={{ color: '#6666aa', fontSize: 9, fontFamily: 'monospace' }}>override</span>}
-                      {descOverrides[tool.name] && <span style={{ color: '#0088aa', fontSize: 9, fontFamily: 'monospace' }}>✎ desc</span>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+        {tools.map((tool) => {
+          const on         = filters[tool.name] !== false
+          const isOverride = tool.name in instFilters
+          const typeDefault = tool.name in typeFilters ? typeFilters[tool.name] : true
+          const showBadge  = isOverride || filters[tool.name] !== typeDefault
+          return (
+            <div
+              key={tool.name}
+              onClick={() => toggle(tool.name)}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 4, background: on ? '#0a120a' : '#111', border: `1px solid ${on ? '#1a2a1a' : '#1a1a1a'}` }}
+            >
+              <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.green : '#333'}`, background: on ? S.green : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {on && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ color: on ? S.green : S.dim, fontSize: 12, fontWeight: 'bold', fontFamily: 'monospace' }}>{tool.name}</span>
+                  {showBadge && <span style={{ color: '#6666aa', fontSize: 9, fontFamily: 'monospace' }}>override</span>}
+                  {descOverrides[tool.name] && <span style={{ color: '#0088aa', fontSize: 9, fontFamily: 'monospace' }}>✎ desc</span>}
+                </div>
+                {editingDesc === tool.name ? (
+                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+                    <input
+                      type="text"
+                      value={editDescVal}
+                      onChange={(e) => setEditDescVal(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveDesc(tool.name, editDescVal); if (e.key === 'Escape') setEditingDesc(null) }}
+                      autoFocus
+                      style={{ width: '100%', background: S.bg, border: '1px solid #333', color: S.text, padding: '3px 6px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
+                    />
+                    <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+                      <button onClick={() => saveDesc(tool.name, editDescVal)} disabled={descSaving} style={{ background: S.green, color: '#000', border: 'none', padding: '2px 8px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>save</button>
+                      <button onClick={() => setEditingDesc(null)} style={{ background: 'none', border: '1px solid #222', color: S.dim, padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>✕</button>
+                      {descOverrides[tool.name] && <button onClick={() => saveDesc(tool.name, '')} style={{ background: 'none', border: '1px solid #2a1a1a', color: '#884444', padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>clear override</button>}
                     </div>
-                    {editingDesc === tool.name ? (
-                      <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
-                        <input
-                          type="text"
-                          value={editDescVal}
-                          onChange={(e) => setEditDescVal(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') saveDesc(tool.name, editDescVal); if (e.key === 'Escape') setEditingDesc(null) }}
-                          autoFocus
-                          style={{ width: '100%', background: S.bg, border: '1px solid #333', color: S.text, padding: '3px 6px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
-                        />
-                        <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
-                          <button onClick={() => saveDesc(tool.name, editDescVal)} disabled={descSaving} style={{ background: S.green, color: '#000', border: 'none', padding: '2px 8px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>save</button>
-                          <button onClick={() => setEditingDesc(null)} style={{ background: 'none', border: '1px solid #222', color: S.dim, padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>✕</button>
-                          {descOverrides[tool.name] && <button onClick={() => saveDesc(tool.name, '')} style={{ background: 'none', border: '1px solid #2a1a1a', color: '#884444', padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>clear override</button>}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 2 }}>
-                        <div style={{ color: descOverrides[tool.name] ? '#00aacc' : (on ? S.muted : '#444'), fontSize: 11, lineHeight: 1.4, flex: 1 }}>
-                          {descOverrides[tool.name] || tool.description || <span style={{ color: '#333' }}>no description</span>}
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditDescVal(descOverrides[tool.name] ?? tool.description ?? ''); setEditingDesc(tool.name) }}
-                          style={{ background: 'none', border: 'none', color: '#333', fontSize: 12, cursor: 'pointer', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}
-                          title="Edit description"
-                        >✎</button>
-                      </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 2 }}>
+                    <div style={{ color: descOverrides[tool.name] ? '#00aacc' : (on ? S.muted : '#444'), fontSize: 11, lineHeight: 1.4, flex: 1 }}>
+                      {descOverrides[tool.name] || tool.description || <span style={{ color: '#333' }}>no description</span>}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditDescVal(descOverrides[tool.name] ?? tool.description ?? ''); setEditingDesc(tool.name) }}
+                      style={{ background: 'none', border: 'none', color: '#333', fontSize: 12, cursor: 'pointer', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}
+                      title="Edit description"
+                    >✎</button>
+                    {onInvoke && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (on) onInvoke(tool) }}
+                        disabled={!on}
+                        style={{ background: 'none', border: `1px solid ${on ? '#1a2a1a' : '#1a1a1a'}`, color: on ? S.green : '#333', fontSize: 10, cursor: on ? 'pointer' : 'default', padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontFamily: 'monospace', lineHeight: 1 }}
+                        title="Run this tool"
+                      >▶</button>
                     )}
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
-          <button
-            onClick={save}
-            disabled={saving}
-            style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
-          >
-            {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
-          </button>
-        </div>
-      )}
+      <button
+        onClick={save}
+        disabled={saving}
+        style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+      >
+        {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
+      </button>
     </div>
   )
 }
@@ -717,7 +715,6 @@ function ApprovalPanel({ onClose, onDecided }: { onClose: () => void; onDecided:
 // ─── Health check panel (in gear modal) ──────────────────────────────────────
 
 function HealthCheckPanel({ server }: { server: ServerData }) {
-  const [open,      setOpen]      = useState(false)
   const [interval,  setInterval2] = useState(server.healthCheckIntervalSeconds ?? 0)
   const [threshold, setThreshold] = useState(server.healthCheckFailThreshold ?? 3)
   const [saving,    setSaving]    = useState(false)
@@ -744,172 +741,207 @@ function HealthCheckPanel({ server }: { server: ServerData }) {
   }
 
   const INTERVALS = [
-    { label: 'off',   secs: 0 },
-    { label: '1 min', secs: 60 },
-    { label: '5 min', secs: 300 },
+    { label: 'off',    secs: 0 },
+    { label: '1 min',  secs: 60 },
+    { label: '5 min',  secs: 300 },
     { label: '15 min', secs: 900 },
     { label: '30 min', secs: 1800 },
   ]
 
   return (
-    <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
-      <button onClick={() => setOpen(!open)} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', fontFamily: 'monospace', padding: 0 }}>
-        {open ? '▼' : '▶'} health check
-        {server.healthLastCheckedAt && (
-          <span style={{ color: '#444', fontSize: 10, marginLeft: 8 }}>
-            last checked {Math.round((Date.now() - server.healthLastCheckedAt) / 60000)}m ago
-          </span>
-        )}
-      </button>
-      {open && (
-        <div style={{ marginTop: 10 }}>
-          {server.autoDisabled && (
-            <div style={{ background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 4, padding: '8px 12px', marginBottom: 12, fontSize: 12 }}>
-              <div style={{ color: S.yellow, fontWeight: 'bold', marginBottom: 4 }}>AUTO-DISABLED</div>
-              <div style={{ color: S.muted, lineHeight: 1.5 }}>
-                Disabled automatically after {server.healthConsecutiveFails} consecutive failure{server.healthConsecutiveFails !== 1 ? 's' : ''}.
-                {server.healthLastError && <> Last error: {server.healthLastError}</>}
-                <br/>Will re-enable automatically on recovery.
-              </div>
-              <button onClick={reenable} style={{ background: 'none', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '3px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3, marginTop: 8 }}>Re-enable now</button>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ color: S.dim, fontSize: 11, marginBottom: 6 }}>Check interval</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {INTERVALS.map((opt) => (
-                <button
-                  key={opt.secs}
-                  onClick={() => setInterval2(opt.secs)}
-                  style={{ background: interval === opt.secs ? S.green : 'none', color: interval === opt.secs ? '#000' : S.dim, border: `1px solid ${interval === opt.secs ? S.green : S.border}`, padding: '3px 10px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+    <div>
+      {server.autoDisabled && (
+        <div style={{ background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18, fontSize: 12 }}>
+          <div style={{ color: S.yellow, fontWeight: 'bold', marginBottom: 4 }}>AUTO-DISABLED</div>
+          <div style={{ color: S.muted, lineHeight: 1.5 }}>
+            Disabled after {server.healthConsecutiveFails} consecutive failure{server.healthConsecutiveFails !== 1 ? 's' : ''}.
+            {server.healthLastError && <> Last error: <span style={{ color: S.red }}>{server.healthLastError}</span></>}
+            <br />Will re-enable automatically on recovery.
           </div>
-
-          {interval > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ color: S.dim, fontSize: 11, marginBottom: 6 }}>Disable after <span style={{ color: S.text }}>{threshold}</span> consecutive failures</div>
-              <input
-                type="range" min={1} max={10} value={threshold}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                style={{ width: '100%', accentColor: S.green }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: S.dim, fontSize: 10 }}>
-                <span>1</span><span>10</span>
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={save}
-            disabled={saving}
-            style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '5px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
-          >
-            {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
-          </button>
+          <button onClick={reenable} style={{ background: 'none', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '3px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3, marginTop: 10 }}>Re-enable now</button>
         </div>
       )}
+
+      {server.healthLastCheckedAt && (
+        <div style={{ color: '#444', fontSize: 11, marginBottom: 14 }}>
+          Last checked {Math.round((Date.now() - server.healthLastCheckedAt) / 60000)}m ago
+          {server.healthLastStatus && (
+            <span style={{ marginLeft: 8, color: server.healthLastStatus === 'ok' ? S.green : S.red }}>· {server.healthLastStatus}</span>
+          )}
+        </div>
+      )}
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ color: S.dim, fontSize: 11, marginBottom: 8 }}>Check interval</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {INTERVALS.map((opt) => (
+            <button
+              key={opt.secs}
+              onClick={() => setInterval2(opt.secs)}
+              style={{ background: interval === opt.secs ? S.green : 'none', color: interval === opt.secs ? '#000' : S.dim, border: `1px solid ${interval === opt.secs ? S.green : S.border}`, padding: '4px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {interval > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ color: S.dim, fontSize: 11, marginBottom: 8 }}>
+            Disable after <span style={{ color: S.text, fontWeight: 'bold' }}>{threshold}</span> consecutive failure{threshold !== 1 ? 's' : ''}
+          </div>
+          <input
+            type="range" min={1} max={10} value={threshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+            style={{ width: '100%', accentColor: S.green }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#333', fontSize: 10, marginTop: 2 }}>
+            <span>1</span><span>10</span>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={save}
+        disabled={saving}
+        style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '5px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+      >
+        {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
+      </button>
     </div>
   )
 }
 
 // ─── Approval rules panel (in gear modal) ────────────────────────────────────
 
-function ApprovalRulesPanel({ serverId }: { serverId: string }) {
-  const [open,    setOpen]    = useState(false)
-  const [rules,   setRules]   = useState<Array<{ pattern: string; enabled: boolean }>>([])
-  const [draft,   setDraft]   = useState('')
-  const [saving,  setSaving]  = useState(false)
-  const [saved,   setSaved]   = useState(false)
+function ApprovalRulesPanel({ server }: { server: ServerData }) {
+  const [rules,  setRules]  = useState<Array<{ pattern: string; enabled: boolean }>>([])
+  const [draft,  setDraft]  = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
 
   useEffect(() => {
-    if (!open) return
-    fetch(`/api/approvals/rules/${encodeURIComponent(serverId)}`).then((r) => r.json()).then(setRules)
-  }, [open, serverId])
+    fetch(`/api/approvals/rules/${encodeURIComponent(server.id)}`).then((r) => r.json()).then(setRules)
+  }, [server.id])
 
-  async function save(next: typeof rules) {
+  async function saveRules(next: typeof rules) {
+    setRules(next)
     setSaving(true)
-    await fetch(`/api/approvals/rules/${encodeURIComponent(serverId)}`, {
+    await fetch(`/api/approvals/rules/${encodeURIComponent(server.id)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(next),
     })
     setSaving(false); setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setTimeout(() => setSaved(false), 1500)
   }
 
-  function addRule() {
-    if (!draft.trim()) return
-    const next = [...rules, { pattern: draft.trim(), enabled: true }]
-    setRules(next); setDraft(''); save(next)
+  function isApproved(toolName: string) {
+    return rules.some((r) => r.pattern === toolName && r.enabled)
   }
 
-  function toggle(i: number) {
-    const next = rules.map((r, idx) => idx === i ? { ...r, enabled: !r.enabled } : r)
-    setRules(next); save(next)
+  function toggleTool(toolName: string) {
+    const next = isApproved(toolName)
+      ? rules.filter((r) => r.pattern !== toolName)
+      : [...rules, { pattern: toolName, enabled: true }]
+    saveRules(next)
   }
 
-  function remove(i: number) {
-    const next = rules.filter((_, idx) => idx !== i)
-    setRules(next); save(next)
+  const toolNames = new Set((server.tools ?? []).map((t) => t.name))
+  const customPatterns = rules.filter((r) => !toolNames.has(r.pattern))
+
+  function addCustom() {
+    const p = draft.trim()
+    if (!p || rules.some((r) => r.pattern === p)) return
+    saveRules([...rules, { pattern: p, enabled: true }])
+    setDraft('')
   }
+
+  function removeCustom(pattern: string) {
+    saveRules(rules.filter((r) => r.pattern !== pattern))
+  }
+
+  const gatedCount = rules.filter((r) => r.enabled && toolNames.has(r.pattern)).length
 
   return (
-    <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
-      <button onClick={() => setOpen(!open)} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', fontFamily: 'monospace', padding: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-        {open ? '▼' : '▶'} approval rules
-        {rules.length > 0 && <span style={{ color: S.yellow, fontSize: 10 }}>{rules.filter((r) => r.enabled).length} active</span>}
-      </button>
-      {open && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ color: S.dim, fontSize: 11, marginBottom: 8, lineHeight: 1.5 }}>
-            Actions matching these patterns require human approval before running. Glob syntax: <code style={{ color: S.green }}>delete_*</code>
-          </div>
-          {rules.length === 0 ? (
-            <div style={{ color: '#333', fontSize: 12, marginBottom: 10 }}>No rules. Everything runs without approval.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-              {rules.map((r, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div
-                    onClick={() => toggle(i)}
-                    style={{ width: 14, height: 14, flexShrink: 0, border: `1px solid ${r.enabled ? S.yellow : S.border}`, background: r.enabled ? S.yellow : 'transparent', borderRadius: 2, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    {r.enabled && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
-                  </div>
-                  <code style={{ color: r.enabled ? S.text : S.dim, fontSize: 12, flex: 1 }}>{r.pattern}</code>
-                  <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: '#444', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+    <div>
+      <div style={{ color: S.dim, fontSize: 11, marginBottom: 14, lineHeight: 1.6 }}>
+        Checked tools pause and wait for your approval before running.{' '}
+        {gatedCount > 0
+          ? <span style={{ color: S.yellow }}>{gatedCount} tool{gatedCount !== 1 ? 's' : ''} gated.</span>
+          : <span style={{ color: '#444' }}>Nothing gated — AI has full autonomy.</span>}
+      </div>
+
+      {(server.tools ?? []).length === 0 ? (
+        <div style={{ color: '#444', fontSize: 12, marginBottom: 16 }}>No tools available (instance offline).</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 18 }}>
+          {(server.tools ?? []).map((tool) => {
+            const on = isApproved(tool.name)
+            return (
+              <div
+                key={tool.name}
+                onClick={() => toggleTool(tool.name)}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '7px 8px', borderRadius: 4, background: on ? '#1a1000' : '#111', border: `1px solid ${on ? '#2a2000' : '#1a1a1a'}` }}
+              >
+                <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.yellow : '#333'}`, background: on ? S.yellow : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {on && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
                 </div>
-              ))}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addRule()}
-              placeholder="action_name or glob e.g. delete_*"
-              style={{ flex: 1, background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '4px 8px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
-            />
-            <button onClick={addRule} style={{ background: S.yellow + '22', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '4px 12px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}>add</button>
-          </div>
-          {saved && <div style={{ color: S.green, fontSize: 10, marginTop: 4 }}>✓ saved</div>}
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ color: on ? S.yellow : S.muted, fontSize: 12, fontFamily: 'monospace', fontWeight: on ? 'bold' : 'normal' }}>{tool.name}</span>
+                  {tool.description && (
+                    <div style={{ color: on ? '#6a5500' : '#333', fontSize: 11, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool.description}</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
+
+      <div style={{ borderTop: `1px solid #1a1a1a`, paddingTop: 14 }}>
+        <div style={{ color: '#444', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Custom glob patterns</div>
+        <div style={{ color: '#333', fontSize: 11, marginBottom: 10 }}>
+          e.g. <code style={{ color: '#555' }}>delete_*</code> gates every action whose name starts with delete_
+        </div>
+        {customPatterns.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+            {customPatterns.map((r) => (
+              <div key={r.pattern} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#1a1000', border: '1px solid #2a2000', borderRadius: 3 }}>
+                <code style={{ color: S.yellow, flex: 1, fontSize: 12 }}>{r.pattern}</code>
+                <button onClick={(e) => { e.stopPropagation(); removeCustom(r.pattern) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addCustom()}
+            placeholder="delete_*  or  restart_*"
+            style={{ flex: 1, background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '4px 8px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
+          />
+          <button onClick={addCustom} style={{ background: 'none', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '4px 10px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer', borderRadius: 3 }}>add</button>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8, height: 16, fontSize: 10 }}>
+        {saving && <span style={{ color: S.dim }}>saving...</span>}
+        {saved && <span style={{ color: S.green }}>✓ saved</span>}
+      </div>
     </div>
   )
 }
 
 // ─── Server card ──────────────────────────────────────────────────────────────
 
+type GearTab = 'creds' | 'access' | 'approvals' | 'health' | 'calls'
+
 function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }: { server: ServerData; index: number; snarky: string; onInvoke: (m: InvokeModal) => void; onRefresh: () => void; onUninstall: () => void }) {
   const [gearOpen, setGearOpen]         = useState(false)
-  const [expanded, setExpanded]         = useState(false)
-  const [credOpen, setCredOpen]         = useState(false)
+  const [gearTab,  setGearTab]          = useState<GearTab>('creds')
   const [setting, setSetting]           = useState<string | null>(null)
   const [inputVal, setInputVal]         = useState('')
   const [credStatuses, setCredStatuses] = useState<Record<string, { isSet: boolean; updatedAt: number | null }>>({})
@@ -987,45 +1019,74 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
       )}
 
       {/* Gear modal */}
-      {gearOpen && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setGearOpen(false) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 50, padding: '40px 20px', overflowY: 'auto' }}
-        >
-          <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 24, width: '100%', maxWidth: 640, fontFamily: 'monospace' }}>
+      {gearOpen && (() => {
+        const tabs = [
+          server.credentials?.length > 0 ? { id: 'creds' as GearTab, label: 'Credentials' } : null,
+          { id: 'access' as GearTab, label: 'Access' },
+          { id: 'approvals' as GearTab, label: 'Approvals' },
+          server.native ? { id: 'health' as GearTab, label: 'Health' } : null,
+          { id: 'calls' as GearTab, label: 'Calls' },
+        ].filter(Boolean) as Array<{ id: GearTab; label: string }>
+        const activeTab = tabs.find((t) => t.id === gearTab) ? gearTab : tabs[0].id
+        return (
+          <div
+            onClick={(e) => { if (e.target === e.currentTarget) setGearOpen(false) }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 50, padding: '40px 20px', overflowY: 'auto' }}
+          >
+            <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, width: '100%', maxWidth: 640, fontFamily: 'monospace' }}>
 
-            {/* Modal header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-              <div>
-                <div style={{ color: S.text, fontWeight: 'bold', fontSize: 15 }}>{server.name}</div>
-                <div style={{ color: S.dim, fontSize: 11, marginTop: 2 }}>instance settings</div>
+              {/* Modal header + tab bar */}
+              <div style={{ padding: '18px 24px 0', borderBottom: `1px solid ${S.border}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot, boxShadow: `0 0 5px ${statusDot}`, flexShrink: 0 }} />
+                      <span style={{ color: S.text, fontWeight: 'bold', fontSize: 16 }}>{server.name}</span>
+                      {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
+                    </div>
+                    <div style={{ color: S.dim, fontSize: 11, marginTop: 4, paddingLeft: 16 }}>
+                      {server.type} · {server.online ? `online · ${server.latencyMs ?? 0}ms` : 'offline'} · {server.tools?.length ?? 0} tools
+                      {server.serverInfo && <span style={{ color: '#333' }}> · {server.serverInfo.name} {server.serverInfo.version}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => setGearOpen(false)} style={{ background: 'none', border: 'none', color: S.muted, cursor: 'pointer', fontSize: 18, marginLeft: 12 }}>✕</button>
+                </div>
+                <div style={{ display: 'flex' }}>
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setGearTab(tab.id)}
+                      style={{ background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === tab.id ? S.green : 'transparent'}`, color: activeTab === tab.id ? S.green : S.dim, fontSize: 12, padding: '6px 16px', cursor: 'pointer', fontFamily: 'monospace', marginBottom: -1, transition: 'color 0.1s' }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <button onClick={() => setGearOpen(false)} style={{ background: 'none', border: 'none', color: S.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
-            </div>
 
-            {/* Credentials */}
-            {server.credentials?.length > 0 && (
-              <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10, marginBottom: 4 }}>
-                <button onClick={() => setCredOpen(!credOpen)} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', fontFamily: 'monospace', padding: 0 }}>
-                  {credOpen ? '▼' : '▶'} credentials
-                </button>
-                {credOpen && (
-                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {/* Tab content */}
+              <div style={{ padding: 24, minHeight: 260 }}>
+
+                {activeTab === 'creds' && server.credentials?.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {server.credentials.map((cred) => {
                       const st = credStatuses[cred.key]
                       return (
-                        <div key={cred.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: st?.isSet ? S.green : S.red, flexShrink: 0 }} />
-                          <span style={{ color: S.muted, flexGrow: 1, fontFamily: 'monospace' }}>{cred.key}</span>
-                          {st?.isSet && <span style={{ color: S.dim, fontSize: 11 }}>set {new Date(st.updatedAt!).toLocaleDateString()}</span>}
-                          <button onClick={() => { setSetting(cred.key); setInputVal('') }} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.muted, fontSize: 11, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace' }}>{st?.isSet ? 'rotate' : 'set'}</button>
-                          {st?.isSet && <button onClick={() => delCred(cred.key)} style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '2px 6px', cursor: 'pointer', fontFamily: 'monospace' }}>✕</button>}
+                        <div key={cred.key} style={{ background: S.bg, border: `1px solid #1a1a1a`, borderRadius: 4, padding: '10px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: st?.isSet ? S.green : S.red, flexShrink: 0, boxShadow: st?.isSet ? `0 0 4px ${S.green}` : undefined }} />
+                            <span style={{ color: S.text, flex: 1, fontFamily: 'monospace', fontSize: 13 }}>{cred.key}</span>
+                            {st?.isSet && <span style={{ color: '#444', fontSize: 11 }}>set {new Date(st.updatedAt!).toLocaleDateString()}</span>}
+                            <button onClick={() => { setSetting(cred.key); setInputVal('') }} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.muted, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{st?.isSet ? 'rotate' : 'set'}</button>
+                            {st?.isSet && <button onClick={() => delCred(cred.key)} style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '2px 6px', cursor: 'pointer', fontFamily: 'monospace' }}>✕</button>}
+                          </div>
+                          {cred.description && <div style={{ color: '#444', fontSize: 11, marginTop: 5, paddingLeft: 17 }}>{cred.description}</div>}
                         </div>
                       )
                     })}
                     {setting && (
-                      <div style={{ marginTop: 6, background: S.bg, border: '1px solid #222', borderRadius: 4, padding: 10 }}>
-                        <div style={{ color: S.dim, fontSize: 11, marginBottom: 6 }}>Setting <span style={{ color: S.green }}>{setting}</span></div>
+                      <div style={{ background: '#0d0d0d', border: '1px solid #222', borderRadius: 4, padding: 14, marginTop: 4 }}>
+                        <div style={{ color: S.dim, fontSize: 11, marginBottom: 8 }}>Setting <span style={{ color: S.green }}>{setting}</span></div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <input type="password" autoComplete="new-password" value={inputVal} onChange={(e) => setInputVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveCred()} placeholder="paste value" style={{ flex: 1, background: '#111', border: '1px solid #333', color: S.text, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }} />
                           <button onClick={saveCred} style={{ background: S.green, color: '#000', border: 'none', padding: '5px 12px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}>save</button>
@@ -1035,56 +1096,41 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
                     )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* Tools */}
-            {server.online && server.tools?.length > 0 && (
-              <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 10, marginBottom: 4 }}>
-                <button onClick={() => setExpanded(!expanded)} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, padding: 0, cursor: 'pointer', fontFamily: 'monospace' }}>
-                  {expanded ? '▼' : '▶'} {server.tools.length} tool{server.tools.length !== 1 ? 's' : ''}
-                  {server.serverInfo && <span style={{ marginLeft: 8 }}>· {server.serverInfo.name} {server.serverInfo.version}</span>}
-                </button>
-                {expanded && (
-                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {server.tools.map((tool) => (
-                      <div key={tool.name} style={{ background: S.bg, border: '1px solid #1a1a1a', borderRadius: 4, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ color: S.green, fontSize: 13, fontWeight: 'bold' }}>{tool.name}</div>
-                          {tool.description && <div style={{ color: S.dim, fontSize: 12, marginTop: 2 }}>{tool.description}</div>}
-                        </div>
-                        <button onClick={() => { setGearOpen(false); onInvoke({ mcpId: server.id, serverName: server.name, tool }) }} style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', color: S.green, fontSize: 12, padding: '4px 10px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 4, flexShrink: 0, marginLeft: 12 }}>run →</button>
-                      </div>
-                    ))}
-                  </div>
+                {activeTab === 'access' && (
+                  <ToolAccessPanel
+                    server={server}
+                    onInvoke={(tool) => { setGearOpen(false); onInvoke({ mcpId: server.id, serverName: server.name, tool }) }}
+                  />
                 )}
+
+                {activeTab === 'approvals' && (
+                  <ApprovalRulesPanel server={server} />
+                )}
+
+                {activeTab === 'health' && server.native && (
+                  <HealthCheckPanel server={server} />
+                )}
+
+                {activeTab === 'calls' && (
+                  <MiniFeed serverId={server.id} forceOpen />
+                )}
+
               </div>
-            )}
 
-            {/* Recent calls mini feed */}
-            <MiniFeed serverId={server.id} />
+              {/* Danger zone */}
+              <div style={{ borderTop: `1px solid #1a1a1a`, padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#333', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>danger zone</span>
+                <button
+                  onClick={() => { setGearOpen(false); onUninstall() }}
+                  style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '4px 14px', cursor: 'pointer', fontFamily: 'monospace' }}
+                >uninstall</button>
+              </div>
 
-            {/* Tool access control */}
-            {server.online && <ToolAccessPanel server={server} />}
-
-            {/* Approval rules */}
-            <ApprovalRulesPanel serverId={server.id} />
-
-            {/* Health check */}
-            {server.native && <HealthCheckPanel server={server} />}
-
-            {/* Danger zone */}
-            <div style={{ borderTop: `1px solid #2a1a1a`, paddingTop: 16, marginTop: 16 }}>
-              <div style={{ color: '#444', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>danger zone</div>
-              <button
-                onClick={() => { setGearOpen(false); onUninstall() }}
-                style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '4px 14px', cursor: 'pointer', fontFamily: 'monospace' }}
-              >uninstall</button>
             </div>
-
           </div>
-        </div>
-      )}
+        )
+      })()}
 
     </div>
   )

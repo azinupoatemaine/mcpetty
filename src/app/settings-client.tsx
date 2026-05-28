@@ -149,6 +149,7 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
             <span style={{ color: '#cc9900' }}>Security concerns:</span>
             <ul style={{ margin: '6px 0 0 16px', padding: 0, lineHeight: 1.8 }}>
               <li>The key cannot be invalidated without wiping the entire data volume.</li>
+              <li>One key, every MCP, zero restrictions — the blast radius of a leak is your entire homelab.</li>
               <li>Any leak means full access to every installed MCP — no scope, no rate limit.</li>
               <li>No per-key audit trail: you cannot tell which connection made which call.</li>
             </ul>

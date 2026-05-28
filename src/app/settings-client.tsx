@@ -8,13 +8,8 @@ const S = {
   muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
 }
 
-interface RateLimit  { gatewayId: string; maxCalls: number; windowSecs: number }
-interface Gateway    { id: string; name: string }
-
 interface SettingsData {
-  settings:   Record<string, string>
-  rateLimits: RateLimit[]
-  gateways:   Gateway[]
+  settings: Record<string, string>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,21 +68,6 @@ function useSave() {
     }
   }
   return { saving, saved, save }
-}
-
-const WINDOW_UNITS = [
-  { label: 'seconds', secs: 1 },
-  { label: 'minutes', secs: 60 },
-  { label: 'hours',   secs: 3600 },
-  { label: 'days',    secs: 86400 },
-]
-
-function secsToUnit(s: number): { amount: number; unit: number } {
-  for (let i = WINDOW_UNITS.length - 1; i >= 0; i--) {
-    if (s % WINDOW_UNITS[i].secs === 0 && Math.floor(s / WINDOW_UNITS[i].secs) > 0)
-      return { amount: s / WINDOW_UNITS[i].secs, unit: i }
-  }
-  return { amount: s, unit: 0 }
 }
 
 // ─── Injection detection section ──────────────────────────────────────────────
@@ -403,96 +383,6 @@ function ChangelogSection() {
   )
 }
 
-// ─── Rate limits section ──────────────────────────────────────────────────────
-
-function RateLimitRow({ gw, existing, onSave }: {
-  gw:       Gateway
-  existing: RateLimit | undefined
-  onSave:   (rl: RateLimit | null) => void
-}) {
-  const init        = existing ? secsToUnit(existing.windowSecs) : { amount: 1, unit: 1 }
-  const [max,  setMax]  = useState(existing?.maxCalls ?? 60)
-  const [amt,  setAmt]  = useState(init.amount)
-  const [unit, setUnit] = useState(init.unit)
-  const { saving, saved, save } = useSave()
-
-  async function handleSave() {
-    const windowSecs = amt * WINDOW_UNITS[unit].secs
-    await save({ setRateLimit: { gatewayId: gw.id, maxCalls: max, windowSecs } })
-    onSave({ gatewayId: gw.id, maxCalls: max, windowSecs })
-  }
-
-  async function handleClear() {
-    await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deleteRateLimit: gw.id }) })
-    onSave(null)
-  }
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 16, alignItems: 'center', padding: '12px 0', borderTop: `1px solid #141414` }}>
-      <div>
-        <div style={{ color: S.text, fontSize: 13 }}>{gw.name}</div>
-        <div style={{ color: S.dim, fontSize: 11, fontFamily: 'monospace' }}>{gw.id}</div>
-        {existing && <div style={{ color: S.yellow, fontSize: 10, marginTop: 2 }}>● active</div>}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <input
-          type="number" min={1} value={max}
-          onChange={(e) => setMax(Number(e.target.value))}
-          style={{ width: 60, background: S.bg, border: `1px solid #222`, color: S.text, fontFamily: 'monospace', fontSize: 12, padding: '5px 8px', borderRadius: 4, outline: 'none' }}
-        />
-        <span style={{ color: S.dim, fontSize: 12 }}>calls per</span>
-        <input
-          type="number" min={1} value={amt}
-          onChange={(e) => setAmt(Number(e.target.value))}
-          style={{ width: 52, background: S.bg, border: `1px solid #222`, color: S.text, fontFamily: 'monospace', fontSize: 12, padding: '5px 8px', borderRadius: 4, outline: 'none' }}
-        />
-        <select
-          value={unit}
-          onChange={(e) => setUnit(Number(e.target.value))}
-          style={{ background: S.bg, border: `1px solid #222`, color: S.muted, fontFamily: 'monospace', fontSize: 12, padding: '5px 8px', borderRadius: 4, outline: 'none' }}
-        >
-          {WINDOW_UNITS.map((u, i) => <option key={i} value={i}>{u.label}</option>)}
-        </select>
-        <SaveBtn saving={saving} saved={saved} onClick={handleSave} />
-        {existing && (
-          <button onClick={handleClear} style={{ background: 'none', border: `1px solid #2a1a1a`, borderRadius: 4, color: '#884444', fontSize: 11, padding: '6px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>
-            clear
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function RateLimitsSection({ gateways, rateLimits: initial }: { gateways: Gateway[]; rateLimits: RateLimit[] }) {
-  const [limits, setLimits] = useState<RateLimit[]>(initial)
-
-  function onSave(updated: RateLimit | null, gatewayId: string) {
-    setLimits((prev) =>
-      updated
-        ? [...prev.filter((r) => r.gatewayId !== gatewayId), updated]
-        : prev.filter((r) => r.gatewayId !== gatewayId)
-    )
-  }
-
-  return (
-    <Section title="Gateway Rate Limits" sub="Limit how many tool calls a named gateway can make in a given time window. Master key is always unlimited.">
-      {gateways.length === 0 ? (
-        <div style={{ color: S.dim, fontSize: 13 }}>No named gateways yet. Create one in the Gateways tab.</div>
-      ) : (
-        gateways.map((gw) => (
-          <RateLimitRow
-            key={gw.id}
-            gw={gw}
-            existing={limits.find((r) => r.gatewayId === gw.id)}
-            onSave={(rl) => onSave(rl, gw.id)}
-          />
-        ))
-      )}
-    </Section>
-  )
-}
-
 // ─── Change password section ──────────────────────────────────────────────────
 
 function ChangePasswordSection() {
@@ -615,7 +505,6 @@ export default function SettingsClient() {
           <WebhookSection    raw={data.settings} />
           <CacheSection      raw={data.settings} />
           <RedactionSection  raw={data.settings} />
-          <RateLimitsSection gateways={data.gateways} rateLimits={data.rateLimits} />
           <ChangelogSection />
         </>
       )}

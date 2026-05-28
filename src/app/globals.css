@@ -19,6 +19,9 @@
   --flag-info-text: #888888;
   --tint-green-bg: #0a1a0a;
   --tint-green-border: #1a3a1a;
+  --tint-yellow-bg: #1a1000;
+  --tint-yellow-border: #2a2000;
+  --tint-red-border: #2a1a1a;
   --info-box-bg: #080f08;
   --info-box-border: #1a3a1a;
   --toggle-off-bg: #222222;
@@ -44,6 +47,9 @@
   --flag-info-text: #666666;
   --tint-green-bg: #f0fff4;
   --tint-green-border: #86efac;
+  --tint-yellow-bg: #fffbeb;
+  --tint-yellow-border: #fde68a;
+  --tint-red-border: #fca5a5;
   --info-box-bg: #f0fdf4;
   --info-box-border: #bbf7d0;
   --toggle-off-bg: #d1d5db;

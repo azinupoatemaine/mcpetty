@@ -119,7 +119,7 @@ function shuffle<T>(arr: T[]): T[] {
 
 const S = {
   bg: 'var(--bg)', card: 'var(--card)', border: 'var(--border)', text: 'var(--text)',
-  muted: 'var(--muted)', dim: 'var(--dim)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
+  muted: 'var(--muted)', dim: 'var(--dim)', dim2: 'var(--dim2)', green: 'var(--green)', red: 'var(--red)', yellow: 'var(--yellow)',
 }
 
 // ─── Graphs ───────────────────────────────────────────────────────────────────
@@ -208,11 +208,11 @@ function MiniFeed({ serverId, forceOpen }: { serverId: string; forceOpen?: boole
   ) : (
     <div>
       {calls.map((c) => (
-        <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '8px 1fr 44px 60px', gap: 6, alignItems: 'center', padding: '4px 0', borderTop: '1px solid #141414', fontSize: 11 }}>
+        <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '8px 1fr 44px 60px', gap: 6, alignItems: 'center', padding: '4px 0', borderTop: `1px solid ${S.border}`, fontSize: 11 }}>
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: c.outcome === 'error' ? S.red : S.green, display: 'inline-block' }} />
           <span style={{ color: c.outcome === 'error' ? '#aa4444' : S.muted, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.error ?? undefined}>{c.action}</span>
           <span style={{ color: S.dim, textAlign: 'right' }}>{c.latency_ms}ms</span>
-          <span style={{ color: '#333', textAlign: 'right' }}>{relTs(c.timestamp)}</span>
+          <span style={{ color: S.dim2, textAlign: 'right' }}>{relTs(c.timestamp)}</span>
         </div>
       ))}
     </div>
@@ -344,15 +344,15 @@ function ToolAccessPanel({ server, onInvoke }: { server: ServerData; onInvoke?: 
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         {(['all', 'none'] as const).map((v) => (
-          <button key={v} onClick={() => setAll(v === 'all')} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.dim, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{v}</button>
+          <button key={v} onClick={() => setAll(v === 'all')} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 3, color: S.dim, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{v}</button>
         ))}
         {hasOverrides && (
-          <button onClick={reset} style={{ background: 'none', border: '1px solid #1a1a2a', borderRadius: 3, color: '#6666aa', fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>reset to type defaults</button>
+          <button onClick={reset} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 3, color: '#6666aa', fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>reset to type defaults</button>
         )}
         <span style={{ marginLeft: 'auto', color: enabledCount === tools.length ? S.green : S.yellow, fontSize: 11 }}>
           {enabledCount}/{tools.length} exposed
         </span>
-        {hasOverrides && <span style={{ color: '#555', fontSize: 10 }}>· overrides active</span>}
+        {hasOverrides && <span style={{ color: S.dim, fontSize: 10 }}>· overrides active</span>}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
@@ -365,9 +365,9 @@ function ToolAccessPanel({ server, onInvoke }: { server: ServerData; onInvoke?: 
             <div
               key={tool.name}
               onClick={() => toggle(tool.name)}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 4, background: on ? '#0a120a' : '#111', border: `1px solid ${on ? '#1a2a1a' : '#1a1a1a'}` }}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '6px 8px', borderRadius: 4, background: on ? 'var(--tint-green-bg)' : S.card, border: `1px solid ${on ? 'var(--tint-green-border)' : S.border}` }}
             >
-              <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.green : '#333'}`, background: on ? S.green : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.green : S.border}`, background: on ? S.green : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {on && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -384,29 +384,29 @@ function ToolAccessPanel({ server, onInvoke }: { server: ServerData; onInvoke?: 
                       onChange={(e) => setEditDescVal(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') saveDesc(tool.name, editDescVal); if (e.key === 'Escape') setEditingDesc(null) }}
                       autoFocus
-                      style={{ width: '100%', background: S.bg, border: '1px solid #333', color: S.text, padding: '3px 6px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
+                      style={{ width: '100%', background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '3px 6px', fontFamily: 'monospace', fontSize: 11, borderRadius: 3, outline: 'none' }}
                     />
                     <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
                       <button onClick={() => saveDesc(tool.name, editDescVal)} disabled={descSaving} style={{ background: S.green, color: '#000', border: 'none', padding: '2px 8px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>save</button>
-                      <button onClick={() => setEditingDesc(null)} style={{ background: 'none', border: '1px solid #222', color: S.dim, padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>✕</button>
+                      <button onClick={() => setEditingDesc(null)} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>✕</button>
                       {descOverrides[tool.name] && <button onClick={() => saveDesc(tool.name, '')} style={{ background: 'none', border: '1px solid #2a1a1a', color: '#884444', padding: '2px 6px', fontFamily: 'monospace', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}>clear override</button>}
                     </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 2 }}>
-                    <div style={{ color: descOverrides[tool.name] ? '#00aacc' : (on ? S.muted : '#444'), fontSize: 11, lineHeight: 1.4, flex: 1 }}>
-                      {descOverrides[tool.name] || tool.description || <span style={{ color: '#333' }}>no description</span>}
+                    <div style={{ color: descOverrides[tool.name] ? '#00aacc' : (on ? S.muted : S.dim), fontSize: 11, lineHeight: 1.4, flex: 1 }}>
+                      {descOverrides[tool.name] || tool.description || <span style={{ color: S.dim2 }}>no description</span>}
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditDescVal(descOverrides[tool.name] ?? tool.description ?? ''); setEditingDesc(tool.name) }}
-                      style={{ background: 'none', border: 'none', color: '#333', fontSize: 12, cursor: 'pointer', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}
+                      style={{ background: 'none', border: 'none', color: S.dim2, fontSize: 12, cursor: 'pointer', padding: '0 2px', flexShrink: 0, lineHeight: 1 }}
                       title="Edit description"
                     >✎</button>
                     {onInvoke && (
                       <button
                         onClick={(e) => { e.stopPropagation(); if (on) onInvoke(tool) }}
                         disabled={!on}
-                        style={{ background: 'none', border: `1px solid ${on ? '#1a2a1a' : '#1a1a1a'}`, color: on ? S.green : '#333', fontSize: 10, cursor: on ? 'pointer' : 'default', padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontFamily: 'monospace', lineHeight: 1 }}
+                        style={{ background: 'none', border: `1px solid ${on ? 'var(--tint-green-border)' : S.border}`, color: on ? S.green : S.dim2, fontSize: 10, cursor: on ? 'pointer' : 'default', padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontFamily: 'monospace', lineHeight: 1 }}
                         title="Run this tool"
                       >▶</button>
                     )}
@@ -421,7 +421,7 @@ function ToolAccessPanel({ server, onInvoke }: { server: ServerData; onInvoke?: 
       <button
         onClick={save}
         disabled={saving}
-        style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+        style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
       >
         {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
       </button>
@@ -464,7 +464,7 @@ function InvokeModal({ modal, onClose }: { modal: InvokeModal; onClose: () => vo
 
   return (
     <div onClick={(e) => e.target === e.currentTarget && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-      <div style={{ background: S.card, border: '1px solid #333', borderRadius: 8, padding: 24, width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', fontFamily: 'monospace' }}>
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 24, width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', fontFamily: 'monospace' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
             <div style={{ color: S.green, fontWeight: 'bold', fontSize: 14 }}>{modal.tool.name}</div>
@@ -481,17 +481,17 @@ function InvokeModal({ modal, onClose }: { modal: InvokeModal; onClose: () => vo
                 <span style={{ color: S.green }}>{k}</span>
                 {required.includes(k) && <span style={{ color: S.red, marginLeft: 4 }}>*</span>}
                 <span style={{ color: S.muted, marginLeft: 8 }}>{v.type}</span>
-                {v.description && <span style={{ color: '#444', marginLeft: 8 }}>— {v.description}</span>}
+                {v.description && <span style={{ color: S.dim, marginLeft: 8 }}>— {v.description}</span>}
               </div>
             ))}
           </div>
         )}
-        <textarea value={args} onChange={(e) => setArgs(e.target.value)} style={{ width: '100%', background: S.bg, border: '1px solid #333', color: S.text, padding: 10, fontFamily: 'monospace', fontSize: 12, borderRadius: 4, resize: 'vertical', minHeight: 100, outline: 'none', marginBottom: 12 }} />
+        <textarea value={args} onChange={(e) => setArgs(e.target.value)} style={{ width: '100%', background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: 10, fontFamily: 'monospace', fontSize: 12, borderRadius: 4, resize: 'vertical', minHeight: 100, outline: 'none', marginBottom: 12 }} />
         <button onClick={invoke} disabled={loading} style={{ background: loading ? '#1a2a1a' : S.green, color: '#000', border: 'none', padding: '8px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13, cursor: loading ? 'not-allowed' : 'pointer', borderRadius: 4, width: '100%' }}>
           {loading ? 'Yeeting...' : '⚡ Yeet This Tool'}
         </button>
-        {error  && <div style={{ marginTop: 16, background: '#1a0a0a', border: `1px solid ${S.red}`, borderRadius: 4, padding: 12, color: S.red, fontSize: 12 }}><b>it broke:</b> {error}</div>}
-        {result && <div style={{ marginTop: 16, background: '#0a1a0a', border: `1px solid ${S.green}`, borderRadius: 4, padding: 12 }}><div style={{ color: S.green, fontSize: 11, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Result</div><pre style={{ color: S.text, fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{result}</pre></div>}
+        {error  && <div style={{ marginTop: 16, background: 'var(--flag-danger-bg)', border: `1px solid ${S.red}`, borderRadius: 4, padding: 12, color: S.red, fontSize: 12 }}><b>it broke:</b> {error}</div>}
+        {result && <div style={{ marginTop: 16, background: 'var(--tint-green-bg)', border: `1px solid ${S.green}`, borderRadius: 4, padding: 12 }}><div style={{ color: S.green, fontSize: 11, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Result</div><pre style={{ color: S.text, fontSize: 12, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{result}</pre></div>}
       </div>
     </div>
   )
@@ -562,7 +562,7 @@ function TagEditor({ serverId, initial }: { serverId: string; initial: string[] 
             onBlur={() => setTimeout(() => { setEditing(false); setDropOpen(false) }, 150)}
             autoFocus
             placeholder="new tag"
-            style={{ background: S.bg, border: `1px solid #333`, color: S.text, fontFamily: 'monospace', fontSize: 11, padding: '2px 7px', borderRadius: 3, outline: 'none', width: 80 }}
+            style={{ background: S.bg, border: `1px solid ${S.border}`, color: S.text, fontFamily: 'monospace', fontSize: 11, padding: '2px 7px', borderRadius: 3, outline: 'none', width: 80 }}
           />
           {saving && <span style={{ color: S.dim, fontSize: 10, position: 'absolute', right: -18, top: 3 }}>…</span>}
           {dropOpen && suggestions.length > 0 && (
@@ -584,7 +584,7 @@ function TagEditor({ serverId, initial }: { serverId: string; initial: string[] 
       ) : tags.length < 3 ? (
         <button
           onClick={open}
-          style={{ background: 'none', border: `1px solid #222`, color: S.dim, fontSize: 10, padding: '2px 7px', borderRadius: 3, cursor: 'pointer', fontFamily: 'monospace' }}
+          style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, fontSize: 10, padding: '2px 7px', borderRadius: 3, cursor: 'pointer', fontFamily: 'monospace' }}
         >+ tag</button>
       ) : null}
     </div>
@@ -668,7 +668,7 @@ function ApprovalPanel({ onClose, onDecided }: { onClose: () => void; onDecided:
             <div style={{ color: S.text, fontSize: 12, marginBottom: 6 }}>
               <span style={{ color: S.yellow }}>action:</span> {req.action}
             </div>
-            <pre style={{ background: '#0a0a0a', border: `1px solid #1a1a1a`, borderRadius: 4, padding: '6px 8px', fontSize: 10, color: S.muted, overflow: 'auto', maxHeight: 120, margin: '0 0 10px 0' }}>
+            <pre style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 8px', fontSize: 10, color: S.muted, overflow: 'auto', maxHeight: 120, margin: '0 0 10px 0' }}>
               {JSON.stringify(JSON.parse(req.argsJson), null, 2)}
             </pre>
 
@@ -690,8 +690,8 @@ function ApprovalPanel({ onClose, onDecided }: { onClose: () => void; onDecided:
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => decide(req.id, 'approved')} style={{ background: '#0a1a0a', border: `1px solid ${S.green}`, color: S.green, padding: '4px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4, flex: 1 }}>✓ Approve</button>
-                  <button onClick={() => { setRejectId(req.id); setRejectReason('') }} style={{ background: '#1a0a0a', border: `1px solid ${S.red}`, color: S.red, padding: '4px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4, flex: 1 }}>✕ Reject</button>
+                  <button onClick={() => decide(req.id, 'approved')} style={{ background: 'var(--tint-green-bg)', border: `1px solid ${S.green}`, color: S.green, padding: '4px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4, flex: 1 }}>✓ Approve</button>
+                  <button onClick={() => { setRejectId(req.id); setRejectReason('') }} style={{ background: 'var(--flag-danger-bg)', border: `1px solid ${S.red}`, color: S.red, padding: '4px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4, flex: 1 }}>✕ Reject</button>
                 </div>
               )
             )}
@@ -751,7 +751,7 @@ function HealthCheckPanel({ server }: { server: ServerData }) {
   return (
     <div>
       {server.autoDisabled && (
-        <div style={{ background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18, fontSize: 12 }}>
+        <div style={{ background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 4, padding: '10px 14px', marginBottom: 18, fontSize: 12 }}>
           <div style={{ color: S.yellow, fontWeight: 'bold', marginBottom: 4 }}>AUTO-DISABLED</div>
           <div style={{ color: S.muted, lineHeight: 1.5 }}>
             Disabled after {server.healthConsecutiveFails} consecutive failure{server.healthConsecutiveFails !== 1 ? 's' : ''}.
@@ -763,7 +763,7 @@ function HealthCheckPanel({ server }: { server: ServerData }) {
       )}
 
       {server.healthLastCheckedAt && (
-        <div style={{ color: '#444', fontSize: 11, marginBottom: 14 }}>
+        <div style={{ color: S.dim, fontSize: 11, marginBottom: 14 }}>
           Last checked {Math.round((Date.now() - server.healthLastCheckedAt) / 60000)}m ago
           {server.healthLastStatus && (
             <span style={{ marginLeft: 8, color: server.healthLastStatus === 'ok' ? S.green : S.red }}>· {server.healthLastStatus}</span>
@@ -796,7 +796,7 @@ function HealthCheckPanel({ server }: { server: ServerData }) {
             onChange={(e) => setThreshold(Number(e.target.value))}
             style={{ width: '100%', accentColor: S.green }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#333', fontSize: 10, marginTop: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', color: S.dim2, fontSize: 10, marginTop: 2 }}>
             <span>1</span><span>10</span>
           </div>
         </div>
@@ -805,7 +805,7 @@ function HealthCheckPanel({ server }: { server: ServerData }) {
       <button
         onClick={save}
         disabled={saving}
-        style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '5px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+        style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '5px 18px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
       >
         {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
       </button>
@@ -870,11 +870,11 @@ function ApprovalRulesPanel({ server }: { server: ServerData }) {
         Checked tools pause and wait for your approval before running.{' '}
         {gatedCount > 0
           ? <span style={{ color: S.yellow }}>{gatedCount} tool{gatedCount !== 1 ? 's' : ''} gated.</span>
-          : <span style={{ color: '#444' }}>Nothing gated — AI has full autonomy.</span>}
+          : <span style={{ color: S.dim }}>Nothing gated — AI has full autonomy.</span>}
       </div>
 
       {(server.tools ?? []).length === 0 ? (
-        <div style={{ color: '#444', fontSize: 12, marginBottom: 16 }}>No tools available (instance offline).</div>
+        <div style={{ color: S.dim, fontSize: 12, marginBottom: 16 }}>No tools available (instance offline).</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 18 }}>
           {(server.tools ?? []).map((tool) => {
@@ -883,15 +883,15 @@ function ApprovalRulesPanel({ server }: { server: ServerData }) {
               <div
                 key={tool.name}
                 onClick={() => toggleTool(tool.name)}
-                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '7px 8px', borderRadius: 4, background: on ? '#1a1000' : '#111', border: `1px solid ${on ? '#2a2000' : '#1a1a1a'}` }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '7px 8px', borderRadius: 4, background: on ? 'var(--tint-yellow-bg)' : S.card, border: `1px solid ${on ? 'var(--tint-yellow-border)' : S.border}` }}
               >
-                <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.yellow : '#333'}`, background: on ? S.yellow : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2, border: `1px solid ${on ? S.yellow : S.border}`, background: on ? S.yellow : 'transparent', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {on && <span style={{ color: '#000', fontSize: 9, fontWeight: 'bold', lineHeight: 1 }}>✓</span>}
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ color: on ? S.yellow : S.muted, fontSize: 12, fontFamily: 'monospace', fontWeight: on ? 'bold' : 'normal' }}>{tool.name}</span>
                   {tool.description && (
-                    <div style={{ color: on ? '#6a5500' : '#333', fontSize: 11, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tool.description}</div>
+                    <div style={{ color: on ? S.yellow : S.dim2, fontSize: 11, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: on ? 0.7 : 1 }}>{tool.description}</div>
                   )}
                 </div>
               </div>
@@ -900,17 +900,17 @@ function ApprovalRulesPanel({ server }: { server: ServerData }) {
         </div>
       )}
 
-      <div style={{ borderTop: `1px solid #1a1a1a`, paddingTop: 14 }}>
-        <div style={{ color: '#444', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Custom glob patterns</div>
-        <div style={{ color: '#333', fontSize: 11, marginBottom: 10 }}>
-          e.g. <code style={{ color: '#555' }}>delete_*</code> gates every action whose name starts with delete_
+      <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 14 }}>
+        <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Custom glob patterns</div>
+        <div style={{ color: S.dim2, fontSize: 11, marginBottom: 10 }}>
+          e.g. <code style={{ color: S.muted }}>delete_*</code> gates every action whose name starts with delete_
         </div>
         {customPatterns.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {customPatterns.map((r) => (
-              <div key={r.pattern} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#1a1000', border: '1px solid #2a2000', borderRadius: 3 }}>
+              <div key={r.pattern} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'var(--tint-yellow-bg)', border: '1px solid var(--tint-yellow-border)', borderRadius: 3 }}>
                 <code style={{ color: S.yellow, flex: 1, fontSize: 12 }}>{r.pattern}</code>
-                <button onClick={(e) => { e.stopPropagation(); removeCustom(r.pattern) }} style={{ background: 'none', border: 'none', color: '#555', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                <button onClick={(e) => { e.stopPropagation(); removeCustom(r.pattern) }} style={{ background: 'none', border: 'none', color: S.dim, fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>✕</button>
               </div>
             ))}
           </div>
@@ -968,7 +968,7 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
   }
 
   const statusColor  = server.autoDisabled ? S.yellow : server.online ? S.green : S.red
-  const statusBorder = server.autoDisabled ? '#2a2000' : server.online ? '#1a3a1a' : '#2a1a1a'
+  const statusBorder = server.autoDisabled ? 'var(--tint-yellow-border)' : server.online ? 'var(--tint-green-border)' : 'var(--tint-red-border)'
   const statusDot    = server.autoDisabled ? S.yellow : server.online ? S.green : S.red
 
   return (
@@ -982,14 +982,14 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot, display: 'inline-block', boxShadow: `0 0 6px ${statusDot}`, flexShrink: 0 }} />
           <span style={{ fontWeight: 'bold', fontSize: 16, color: S.text }}>{server.name}</span>
-          {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
+          {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
           <TagEditor serverId={server.id} initial={server.tags} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12, color: server.online ? '#3a8a3a' : '#8a3a3a' }}>{snarky}</span>
           <button
             onClick={() => setGearOpen(true)}
-            style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.dim, fontSize: 16, padding: '1px 7px', cursor: 'pointer', fontFamily: 'monospace', lineHeight: 1 }}
+            style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 3, color: S.dim, fontSize: 16, padding: '1px 7px', cursor: 'pointer', fontFamily: 'monospace', lineHeight: 1 }}
             title="Settings"
           >⚙</button>
         </div>
@@ -1042,11 +1042,11 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusDot, boxShadow: `0 0 5px ${statusDot}`, flexShrink: 0 }} />
                       <span style={{ color: S.text, fontWeight: 'bold', fontSize: 16 }}>{server.name}</span>
-                      {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: '#1a1000', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
+                      {server.autoDisabled && <span style={{ color: S.yellow, fontSize: 10, background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 3, padding: '1px 6px' }}>AUTO-DISABLED</span>}
                     </div>
                     <div style={{ color: S.dim, fontSize: 11, marginTop: 4, paddingLeft: 16 }}>
                       {server.type} · {server.online ? `online · ${server.latencyMs ?? 0}ms` : 'offline'} · {server.tools?.length ?? 0} tools
-                      {server.serverInfo && <span style={{ color: '#333' }}> · {server.serverInfo.name} {server.serverInfo.version}</span>}
+                      {server.serverInfo && <span style={{ color: S.dim2 }}> · {server.serverInfo.name} {server.serverInfo.version}</span>}
                     </div>
                   </div>
                   <button onClick={() => setGearOpen(false)} style={{ background: 'none', border: 'none', color: S.muted, cursor: 'pointer', fontSize: 18, marginLeft: 12 }}>✕</button>
@@ -1072,25 +1072,25 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
                     {server.credentials.map((cred) => {
                       const st = credStatuses[cred.key]
                       return (
-                        <div key={cred.key} style={{ background: S.bg, border: `1px solid #1a1a1a`, borderRadius: 4, padding: '10px 14px' }}>
+                        <div key={cred.key} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '10px 14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <span style={{ width: 7, height: 7, borderRadius: '50%', background: st?.isSet ? S.green : S.red, flexShrink: 0, boxShadow: st?.isSet ? `0 0 4px ${S.green}` : undefined }} />
                             <span style={{ color: S.text, flex: 1, fontFamily: 'monospace', fontSize: 13 }}>{cred.key}</span>
-                            {st?.isSet && <span style={{ color: '#444', fontSize: 11 }}>set {new Date(st.updatedAt!).toLocaleDateString()}</span>}
-                            <button onClick={() => { setSetting(cred.key); setInputVal('') }} style={{ background: 'none', border: '1px solid #222', borderRadius: 3, color: S.muted, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{st?.isSet ? 'rotate' : 'set'}</button>
-                            {st?.isSet && <button onClick={() => delCred(cred.key)} style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '2px 6px', cursor: 'pointer', fontFamily: 'monospace' }}>✕</button>}
+                            {st?.isSet && <span style={{ color: S.dim, fontSize: 11 }}>set {new Date(st.updatedAt!).toLocaleDateString()}</span>}
+                            <button onClick={() => { setSetting(cred.key); setInputVal('') }} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 3, color: S.muted, fontSize: 11, padding: '2px 10px', cursor: 'pointer', fontFamily: 'monospace' }}>{st?.isSet ? 'rotate' : 'set'}</button>
+                            {st?.isSet && <button onClick={() => delCred(cred.key)} style={{ background: 'none', border: '1px solid var(--tint-red-border)', borderRadius: 3, color: '#884444', fontSize: 11, padding: '2px 6px', cursor: 'pointer', fontFamily: 'monospace' }}>✕</button>}
                           </div>
-                          {cred.description && <div style={{ color: '#444', fontSize: 11, marginTop: 5, paddingLeft: 17 }}>{cred.description}</div>}
+                          {cred.description && <div style={{ color: S.dim, fontSize: 11, marginTop: 5, paddingLeft: 17 }}>{cred.description}</div>}
                         </div>
                       )
                     })}
                     {setting && (
-                      <div style={{ background: '#0d0d0d', border: '1px solid #222', borderRadius: 4, padding: 14, marginTop: 4 }}>
+                      <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: 14, marginTop: 4 }}>
                         <div style={{ color: S.dim, fontSize: 11, marginBottom: 8 }}>Setting <span style={{ color: S.green }}>{setting}</span></div>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <input type="password" autoComplete="new-password" value={inputVal} onChange={(e) => setInputVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveCred()} placeholder="paste value" style={{ flex: 1, background: '#111', border: '1px solid #333', color: S.text, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }} />
+                          <input type="password" autoComplete="new-password" value={inputVal} onChange={(e) => setInputVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveCred()} placeholder="paste value" style={{ flex: 1, background: S.card, border: `1px solid ${S.border}`, color: S.text, padding: '5px 8px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }} />
                           <button onClick={saveCred} style={{ background: S.green, color: '#000', border: 'none', padding: '5px 12px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}>save</button>
-                          <button onClick={() => setSetting(null)} style={{ background: 'none', border: '1px solid #222', color: S.dim, padding: '5px 8px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}>✕</button>
+                          <button onClick={() => setSetting(null)} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '5px 8px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}>✕</button>
                         </div>
                       </div>
                     )}
@@ -1119,8 +1119,8 @@ function ServerCard({ server, index, snarky, onInvoke, onRefresh, onUninstall }:
               </div>
 
               {/* Danger zone */}
-              <div style={{ borderTop: `1px solid #1a1a1a`, padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: '#333', fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>danger zone</span>
+              <div style={{ borderTop: `1px solid ${S.border}`, padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: S.dim2, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1 }}>danger zone</span>
                 <button
                   onClick={() => { setGearOpen(false); onUninstall() }}
                   style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 3, color: '#884444', fontSize: 11, padding: '4px 14px', cursor: 'pointer', fontFamily: 'monospace' }}
@@ -1203,7 +1203,7 @@ function Library({ onInstalled }: { onInstalled: () => void }) {
                 </div>
                 <button
                   onClick={() => { setInstalling(entry.id); setFormData({}); setError(null) }}
-                  style={{ background: '#0a1a0a', border: '1px solid #1a3a1a', color: S.green, fontSize: 13, padding: '6px 14px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 4, flexShrink: 0, marginLeft: 16 }}
+                  style={{ background: 'var(--tint-green-bg)', border: '1px solid var(--tint-green-border)', color: S.green, fontSize: 13, padding: '6px 14px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 4, flexShrink: 0, marginLeft: 16 }}
                 >
                   + install
                 </button>
@@ -1225,13 +1225,13 @@ function Library({ onInstalled }: { onInstalled: () => void }) {
                         placeholder={cred.key}
                         value={formData[cred.key] ?? ''}
                         onChange={(e) => setFormData((p) => ({ ...p, [cred.key]: e.target.value }))}
-                        style={{ width: '100%', background: S.bg, border: '1px solid #333', color: S.text, padding: '6px 10px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }}
+                        style={{ width: '100%', background: S.bg, border: `1px solid ${S.border}`, color: S.text, padding: '6px 10px', fontFamily: 'monospace', fontSize: 13, borderRadius: 4, outline: 'none' }}
                       />
                     </div>
                   ))}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => install(entry)} style={{ background: S.green, color: '#000', border: 'none', padding: '6px 16px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 13, cursor: 'pointer', borderRadius: 4 }}>Install</button>
-                    <button onClick={() => { setInstalling(null); setError(null) }} style={{ background: 'none', border: '1px solid #222', color: S.dim, padding: '6px 12px', fontFamily: 'monospace', fontSize: 13, cursor: 'pointer', borderRadius: 4 }}>cancel</button>
+                    <button onClick={() => { setInstalling(null); setError(null) }} style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '6px 12px', fontFamily: 'monospace', fontSize: 13, cursor: 'pointer', borderRadius: 4 }}>cancel</button>
                   </div>
                 </div>
               )}
@@ -1255,13 +1255,16 @@ export default function Dashboard() {
   const [approvalOpen, setApprovalOpen] = useState(false)
   const [tagFilter, setTagFilter]   = useState<Set<string>>(new Set())
   const [snarkies]                  = useState(() => ({ online: shuffle(SNARKY_ONLINE), offline: shuffle(SNARKY_OFFLINE) }))
+  const [countdown, setCountdown]   = useState<number | null>(null)
 
   const fetchServers = useCallback(async () => {
     setLoading(true)
+    setCountdown(null)
     try {
       const res = await fetch('/api/servers')
       setServers(await res.json())
       setLast(new Date())
+      setCountdown(120)
     } catch { /* silent */ } finally { setLoading(false) }
   }, [])
 
@@ -1278,6 +1281,13 @@ export default function Dashboard() {
     const t = setInterval(pollApprovals, 10000)
     return () => clearInterval(t)
   }, [fetchServers, pollApprovals])
+
+  useEffect(() => {
+    if (countdown === null || loading) return
+    if (countdown === 0) { fetchServers(); return }
+    const t = setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : null)), 1000)
+    return () => clearTimeout(t)
+  }, [countdown, loading, fetchServers])
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -1312,15 +1322,15 @@ export default function Dashboard() {
       <Nav active="Dashboard" approvalCount={pendingCount} onApprovalsClick={() => setApprovalOpen(true)} />
 
       {/* Stats bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: `1px solid #1a1a1a`, paddingBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: `1px solid ${S.border}`, paddingBottom: 16 }}>
         <div style={{ display: 'flex', gap: 24, fontSize: 13 }}>
           <span><span style={{ color: S.green }}>{onlineCount}</span><span style={{ color: S.muted }}>/{servers.length} online</span></span>
           <span style={{ color: S.muted }}>{totalTools} tools</span>
           {lastRefresh && <span style={{ color: S.dim }}>checked {lastRefresh.toLocaleTimeString()}</span>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={fetchServers} disabled={loading} style={{ background: 'none', border: '1px solid #222', borderRadius: 4, color: S.dim, fontSize: 12, padding: '4px 12px', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace' }}>
-            {loading ? '...' : '↺ refresh'}
+          <button onClick={fetchServers} disabled={loading} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 4, color: S.dim, fontSize: 12, padding: '4px 12px', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace', minWidth: 92 }}>
+            {loading ? '...' : countdown !== null ? `↺ ${countdown}s` : '↺ refresh'}
           </button>
           <button onClick={logout} style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 4, color: '#884444', fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontFamily: 'monospace' }}>
             logout
@@ -1337,7 +1347,7 @@ export default function Dashboard() {
       ) : servers.length === 0 ? (
         <div style={{ textAlign: 'center', paddingTop: 40 }}>
           <div style={{ color: S.dim, fontSize: 14, marginBottom: 8 }}>No MCPs installed.</div>
-          <div style={{ color: '#444', fontSize: 12 }}>Scroll down to the Library and pick one.</div>
+          <div style={{ color: S.dim, fontSize: 12 }}>Scroll down to the Library and pick one.</div>
         </div>
       ) : (
         <>
@@ -1351,7 +1361,7 @@ export default function Dashboard() {
                     next.has(tag) ? next.delete(tag) : next.add(tag)
                     return next
                   })}
-                  style={{ background: tagFilter.has(tag) ? 'var(--tint-green-bg)' : 'none', border: `1px solid ${tagFilter.has(tag) ? S.green : '#222'}`, color: tagFilter.has(tag) ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3 }}
+                  style={{ background: tagFilter.has(tag) ? 'var(--tint-green-bg)' : 'none', border: `1px solid ${tagFilter.has(tag) ? S.green : S.border}`, color: tagFilter.has(tag) ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3 }}
                 >
                   [{tag}]
                 </button>

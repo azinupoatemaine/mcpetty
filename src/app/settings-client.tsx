@@ -47,7 +47,7 @@ function SaveBtn({ saving, saved, onClick }: { saving: boolean; saved: boolean; 
     <button
       onClick={onClick}
       disabled={saving}
-      style={{ background: saved ? '#0a1a0a' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
+      style={{ background: saved ? 'var(--tint-green-bg)' : S.green, color: saved ? S.green : '#000', border: saved ? `1px solid ${S.green}` : 'none', padding: '6px 20px', fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer', borderRadius: 4 }}
     >
       {saved ? '✓ saved' : saving ? 'saving...' : 'save'}
     </button>
@@ -141,7 +141,7 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
       </div>
 
       {confirming && !on && (
-        <div style={{ background: '#1a0e00', border: `1px solid ${S.yellow}`, borderRadius: 6, padding: '14px 16px', marginBottom: 0 }}>
+        <div style={{ background: 'var(--tint-yellow-bg)', border: `1px solid ${S.yellow}`, borderRadius: 6, padding: '14px 16px', marginBottom: 0 }}>
           <div style={{ color: S.yellow, fontWeight: 'bold', fontSize: 13, marginBottom: 10 }}>⚠ Before you enable this</div>
           <div style={{ color: S.muted, fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
             The master gateway at <code style={{ color: S.green }}>/mcp</code> exposes <strong>all installed MCPs</strong> with a single non-rotatable key tied to your data volume.
@@ -175,7 +175,7 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
 
       {on && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ background: '#120e00', border: `1px solid #3a2800`, borderRadius: 5, padding: '8px 12px', fontSize: 11, color: '#888855', lineHeight: 1.5 }}>
+          <div style={{ background: 'var(--flag-warning-bg)', border: `1px solid var(--tint-yellow-border)`, borderRadius: 5, padding: '8px 12px', fontSize: 11, color: S.yellow, lineHeight: 1.5 }}>
             Master key active. Anyone with this key has unrestricted access to all MCPs. Consider namespaces for scoped access.
           </div>
 

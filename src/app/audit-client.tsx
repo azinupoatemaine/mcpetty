@@ -54,7 +54,7 @@ function EventBadge({ type }: { type: string }) {
 }
 
 function ActorBadge({ actorType, actorId }: { actorType: string; actorId: string }) {
-  const color = actorType === 'system' ? '#555' : actorType === 'user' ? '#66aaff' : '#ffaa00'
+  const color = actorType === 'system' ? 'var(--dim)' : actorType === 'user' ? '#66aaff' : '#ffaa00'
   return (
     <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
       <span style={{ color, opacity: 0.7 }}>{actorType}/</span>
@@ -66,7 +66,7 @@ function ActorBadge({ actorType, actorId }: { actorType: string; actorId: string
 function DetailCell({ detail }: { detail: Record<string, unknown> }) {
   const [open, setOpen] = useState(false)
   const keys = Object.keys(detail)
-  if (!keys.length) return <span style={{ color: '#555', fontSize: 11 }}>—</span>
+  if (!keys.length) return <span style={{ color: 'var(--dim)', fontSize: 11 }}>—</span>
   if (!open) {
     return (
       <button
@@ -80,7 +80,7 @@ function DetailCell({ detail }: { detail: Record<string, unknown> }) {
   return (
     <pre
       onClick={() => setOpen(false)}
-      style={{ margin: 0, fontSize: 10, color: '#ccc', background: '#111', border: '1px solid #222', padding: '4px 6px', borderRadius: 3, cursor: 'pointer', maxWidth: 320, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
+      style={{ margin: 0, fontSize: 10, color: 'var(--text)', background: 'var(--card)', border: '1px solid var(--border)', padding: '4px 6px', borderRadius: 3, cursor: 'pointer', maxWidth: 320, overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}
     >
       {JSON.stringify(detail, null, 2)}
     </pre>
@@ -130,7 +130,7 @@ export default function AuditClient() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: 16, fontWeight: 600 }}>Audit Log</h2>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 16, fontWeight: 600 }}>Audit Log</h2>
           <div style={{ color: '#9a9a9a', fontSize: 11, marginTop: 4 }}>
             immutable · per-actor · HMAC-SHA256 hash chain
           </div>
@@ -155,14 +155,14 @@ export default function AuditClient() {
           placeholder="filter by event, actor, or subject…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          style={{ background: '#111', border: '1px solid #333', borderRadius: 4, color: '#fff', fontFamily: 'monospace', fontSize: 12, padding: '6px 10px', width: 300, outline: 'none' }}
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontFamily: 'monospace', fontSize: 12, padding: '6px 10px', width: 300, outline: 'none' }}
         />
         {filter && (
           <button onClick={() => setFilter('')} style={{ background: 'none', border: 'none', color: '#9a9a9a', cursor: 'pointer', fontSize: 12, padding: '4px 8px' }}>
             clear
           </button>
         )}
-        <span style={{ marginLeft: 'auto', color: '#555', fontSize: 11 }}>
+        <span style={{ marginLeft: 'auto', color: 'var(--dim)', fontSize: 11 }}>
           {filtered.length} / {entries.length} entries
         </span>
       </div>
@@ -170,8 +170,8 @@ export default function AuditClient() {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid #222', color: '#555', textAlign: 'left' }}>
-              <th style={{ padding: '4px 8px', width: 24, color: '#444', fontWeight: 400 }}>#</th>
+            <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--dim)', textAlign: 'left' }}>
+              <th style={{ padding: '4px 8px', width: 24, color: 'var(--dim)', fontWeight: 400 }}>#</th>
               <th style={{ padding: '4px 8px', whiteSpace: 'nowrap', fontWeight: 400 }}>time</th>
               <th style={{ padding: '4px 8px', fontWeight: 400 }}>actor</th>
               <th style={{ padding: '4px 8px', fontWeight: 400 }}>event</th>
@@ -183,19 +183,19 @@ export default function AuditClient() {
             {filtered.map((e, i) => (
               <tr
                 key={e.id}
-                style={{ borderBottom: '1px solid #111', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}
+                style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(128,128,128,0.04)' }}
               >
-                <td style={{ padding: '5px 8px', color: '#444', fontSize: 10 }}>{e.id}</td>
-                <td style={{ padding: '5px 8px', color: '#666', whiteSpace: 'nowrap', fontSize: 11 }}>{fmt(e.timestamp)}</td>
+                <td style={{ padding: '5px 8px', color: 'var(--dim)', fontSize: 10 }}>{e.id}</td>
+                <td style={{ padding: '5px 8px', color: 'var(--muted)', whiteSpace: 'nowrap', fontSize: 11 }}>{fmt(e.timestamp)}</td>
                 <td style={{ padding: '5px 8px' }}><ActorBadge actorType={e.actorType} actorId={e.actorId} /></td>
                 <td style={{ padding: '5px 8px' }}><EventBadge type={e.eventType} /></td>
-                <td style={{ padding: '5px 8px', color: '#ccc', fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.subject || '—'}</td>
+                <td style={{ padding: '5px 8px', color: 'var(--text)', fontSize: 11, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.subject || '—'}</td>
                 <td style={{ padding: '5px 8px' }}><DetailCell detail={e.detail} /></td>
               </tr>
             ))}
             {!loading && !filtered.length && (
               <tr>
-                <td colSpan={6} style={{ padding: '24px 8px', textAlign: 'center', color: '#555', fontSize: 12 }}>
+                <td colSpan={6} style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--dim)', fontSize: 12 }}>
                   {entries.length ? 'no matches' : 'no audit events yet'}
                 </td>
               </tr>
@@ -209,7 +209,7 @@ export default function AuditClient() {
           <button
             onClick={() => load(offset, true)}
             disabled={loading}
-            style={{ background: 'none', border: '1px solid #333', borderRadius: 4, color: '#9a9a9a', cursor: 'pointer', fontSize: 12, fontFamily: 'monospace', padding: '6px 16px' }}
+            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--muted)', cursor: 'pointer', fontSize: 12, fontFamily: 'monospace', padding: '6px 16px' }}
           >
             {loading ? 'loading…' : 'load more'}
           </button>

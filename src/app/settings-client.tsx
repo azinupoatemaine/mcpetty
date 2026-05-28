@@ -70,6 +70,142 @@ function useSave() {
   return { saving, saved, save }
 }
 
+// ─── Master gateway section ───────────────────────────────────────────────────
+
+function copyText(text: string) {
+  const fallback = () => {
+    const el = document.createElement('textarea')
+    el.value = text
+    Object.assign(el.style, { position: 'fixed', opacity: '0', top: '0', left: '0' })
+    document.body.appendChild(el); el.focus(); el.select()
+    try { document.execCommand('copy') } catch { /* noop */ }
+    document.body.removeChild(el)
+  }
+  if (navigator.clipboard) navigator.clipboard.writeText(text).catch(fallback)
+  else fallback()
+}
+
+function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
+  const [on,          setOn]          = useState(raw.master_gateway_enabled === 'true')
+  const [confirming,  setConfirming]  = useState(false)
+  const [apiKey,      setApiKey]      = useState('')
+  const [host,        setHost]        = useState('<host>')
+  const [keyCopied,   setKeyCopied]   = useState(false)
+  const [cmdCopied,   setCmdCopied]   = useState(false)
+  const [rotating,    setRotating]    = useState(false)
+  const { saving, saved, save }       = useSave()
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') setHost(window.location.hostname)
+    if (raw.master_gateway_enabled === 'true') {
+      fetch('/api/gateway-key').then((r) => r.json()).then((d: { key: string }) => setApiKey(d.key ?? ''))
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function enable() {
+    await save({ settings: { master_gateway_enabled: 'true' } })
+    setOn(true); setConfirming(false)
+    const d = await fetch('/api/gateway-key').then((r) => r.json()) as { key: string }
+    setApiKey(d.key ?? '')
+  }
+
+  async function disable() {
+    await save({ settings: { master_gateway_enabled: 'false' } })
+    setOn(false)
+  }
+
+  async function rotate() {
+    if (!confirm('Rotate master gateway key? Any existing Claude Code configs using this key will break.')) return
+    setRotating(true)
+    const d = await fetch('/api/gateway-key', { method: 'POST' }).then((r) => r.json()) as { key: string }
+    setApiKey(d.key ?? '')
+    setRotating(false)
+  }
+
+  function copy(text: string, setFn: (v: boolean) => void) {
+    copyText(text); setFn(true); setTimeout(() => setFn(false), 2000)
+  }
+
+  const url     = `http://${host}:1234/mcp`
+  const masked  = apiKey ? `${apiKey.slice(0, 8)}${'•'.repeat(20)}` : '...'
+  const cmd     = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${apiKey}"` : ''
+  const cmdShow = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${masked}"` : '...'
+
+  return (
+    <Section title="Master Gateway" sub="The /mcp catch-all endpoint. Disabled by default — use namespaces instead.">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: on || confirming ? 16 : 0 }}>
+        <Toggle on={on} onChange={(v) => { if (v) setConfirming(true); else disable() }} />
+        <span style={{ color: on ? S.yellow : S.dim, fontSize: 12 }}>{on ? 'enabled' : 'disabled'}</span>
+        {saving && <span style={{ color: S.dim, fontSize: 11 }}>saving...</span>}
+        {saved  && <span style={{ color: S.green, fontSize: 11 }}>✓ saved</span>}
+      </div>
+
+      {confirming && !on && (
+        <div style={{ background: '#1a0e00', border: `1px solid ${S.yellow}`, borderRadius: 6, padding: '14px 16px', marginBottom: 0 }}>
+          <div style={{ color: S.yellow, fontWeight: 'bold', fontSize: 13, marginBottom: 10 }}>⚠ Before you enable this</div>
+          <div style={{ color: S.muted, fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+            The master gateway at <code style={{ color: S.green }}>/mcp</code> exposes <strong>all installed MCPs</strong> with a single non-rotatable key tied to your data volume.
+            <br /><br />
+            <span style={{ color: '#cc9900' }}>Security concerns:</span>
+            <ul style={{ margin: '6px 0 0 16px', padding: 0, lineHeight: 1.8 }}>
+              <li>The key cannot be invalidated without wiping the entire data volume.</li>
+              <li>Any leak means full access to every installed MCP — no scope, no rate limit.</li>
+              <li>No per-key audit trail: you cannot tell which connection made which call.</li>
+            </ul>
+            <br />
+            <span style={{ color: S.muted }}>Recommended: create a namespace in the <strong>Namespaces</strong> tab. Namespaces have scoped access, their own revocable keys, rate limiting, and per-namespace audit logs.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={enable}
+              style={{ background: 'none', border: `1px solid ${S.yellow}`, color: S.yellow, padding: '5px 14px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}
+            >
+              I understand — enable anyway
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              style={{ background: 'none', border: `1px solid ${S.border}`, color: S.dim, padding: '5px 12px', fontFamily: 'monospace', fontSize: 12, cursor: 'pointer', borderRadius: 4 }}
+            >
+              cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {on && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ background: '#120e00', border: `1px solid #3a2800`, borderRadius: 5, padding: '8px 12px', fontSize: 11, color: '#888855', lineHeight: 1.5 }}>
+            Master key active. Anyone with this key has unrestricted access to all MCPs. Consider namespaces for scoped access.
+          </div>
+
+          <div>
+            <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>API Key</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px' }}>
+              <code style={{ color: S.muted, fontSize: 11, flex: 1, fontFamily: 'monospace', letterSpacing: 1 }}>{masked}</code>
+              <button onClick={() => copy(apiKey, setKeyCopied)} style={{ background: 'none', border: `1px solid ${S.border}`, color: keyCopied ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
+                {keyCopied ? '✓ copied' : 'copy key'}
+              </button>
+              <button onClick={rotate} disabled={rotating} style={{ background: 'none', border: `1px solid #2a1a1a`, color: '#884444', fontSize: 10, padding: '2px 8px', cursor: rotating ? 'not-allowed' : 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
+                {rotating ? '...' : 'rotate'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Claude Code command</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '7px 10px' }}>
+              <code style={{ color: S.text, fontSize: 11, flex: 1, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>{cmdShow}</code>
+              <button onClick={() => copy(cmd, setCmdCopied)} style={{ background: 'none', border: `1px solid ${S.border}`, color: cmdCopied ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
+                {cmdCopied ? '✓' : 'copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 // ─── Injection detection section ──────────────────────────────────────────────
 
 function InjectionSection({ raw }: { raw: Record<string, string> }) {
@@ -498,6 +634,7 @@ export default function SettingsClient() {
         <div style={{ color: S.dim, textAlign: 'center', paddingTop: 80 }}>Loading...</div>
       ) : (
         <>
+          <MasterGatewaySection raw={data.settings} />
           <MetaMCPSection />
           <ChangePasswordSection />
           <AllowedOriginsSection raw={data.settings} />

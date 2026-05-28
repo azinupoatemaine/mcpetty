@@ -177,71 +177,6 @@ function Charts({ servers }: { servers: ServerData[] }) {
   )
 }
 
-// ─── Gateway info ─────────────────────────────────────────────────────────────
-
-function GatewayInfo() {
-  const [host, setHost]     = useState('<host>')
-  const [apiKey, setApiKey] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [keyCopied, setKeyCopied] = useState(false)
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') setHost(window.location.hostname)
-    fetch('/api/gateway-key').then((r) => r.json()).then((d) => setApiKey(d.key ?? ''))
-  }, [])
-
-  const url         = `http://${host}:1234/mcp`
-  const maskedKey   = apiKey ? `${apiKey.slice(0, 8)}${'•'.repeat(20)}` : '<loading...>'
-  const cmd         = `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${maskedKey}"`
-  const cmdReal     = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${apiKey}"` : cmd
-
-  function copyText(text: string, setCopiedFn: (v: boolean) => void) {
-    const fallback = () => {
-      const el = document.createElement('textarea')
-      el.value = text
-      Object.assign(el.style, { position: 'fixed', opacity: '0', top: '0', left: '0' })
-      document.body.appendChild(el); el.focus(); el.select()
-      try { document.execCommand('copy') } catch { /* noop */ }
-      document.body.removeChild(el)
-    }
-    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(fallback)
-    else fallback()
-    setCopiedFn(true)
-    setTimeout(() => setCopiedFn(false), 2000)
-  }
-
-  return (
-    <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 8, padding: 14, marginBottom: 20 }}>
-      <div style={{ color: S.green, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Gateway Endpoint</div>
-      <div style={{ color: S.muted, fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
-        Point Claude Code here — all installed MCPs as one server. The API key is derived from your master secret and never changes unless you wipe the data volume.
-      </div>
-
-      {/* API key */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>API Key</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px' }}>
-          <code style={{ color: S.muted, fontSize: 11, flex: 1, fontFamily: 'monospace', letterSpacing: 1 }}>
-            {apiKey ? `${apiKey.slice(0, 8)}${'•'.repeat(20)}` : 'loading...'}
-          </code>
-          <button onClick={() => copyText(apiKey, setKeyCopied)} style={{ background: 'none', border: `1px solid ${S.border}`, color: keyCopied ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
-            {keyCopied ? '✓ copied' : 'copy key'}
-          </button>
-        </div>
-      </div>
-
-      {/* Full command */}
-      <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Claude Code command</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '7px 10px' }}>
-        <code style={{ color: S.text, fontSize: 11, flex: 1, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>{cmd}</code>
-        <button onClick={() => copyText(cmdReal, setCopied)} style={{ background: 'none', border: `1px solid ${S.border}`, color: copied ? S.green : S.dim, fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace', borderRadius: 3, flexShrink: 0 }}>
-          {copied ? '✓' : 'copy'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // ─── Mini feed ────────────────────────────────────────────────────────────────
 
 interface MiniCall { id: number; action: string; outcome: string; latency_ms: number; timestamp: number; error: string | null }
@@ -1349,9 +1284,6 @@ export default function Dashboard() {
 
       {/* Charts */}
       {!loading && servers.length > 0 && <Charts servers={servers} />}
-
-      {/* Gateway info */}
-      <GatewayInfo />
 
       {/* Running MCPs */}
       {loading ? (

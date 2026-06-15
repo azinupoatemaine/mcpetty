@@ -228,9 +228,9 @@ Migrations run on boot: `migrateInstalledMCPs()` handles old `id`→`instance_id
 - `Authorization: Bearer <key>` required on every POST
 - **One tool per platform instance** — not one tool per action. This is intentional (STRAP pattern). Do not restructure to per-action tools.
 - Claude calls: `{ "name": "portainer-prod", "arguments": { "action": "list_stacks", "args": {} } }`
-- `tools/list` returns each instance as one tool. The `inputSchema` uses a **discriminated union (`oneOf`)** — each action branch has `action: { const: "<name>" }` and a strictly typed `args` schema derived from the handler's `TOOLS` array. Never replace this with a flat enum + untyped `args: { type: "object" }`.
+- `tools/list` returns each instance as one tool (`buildPlatformTool()`). The `inputSchema` is an object with: `action` — a strict `enum` of every enabled action name; `args` — an object whose `properties` are the typed union of all args across actions, with `additionalProperties: false`; and a `nocache` boolean. The per-action signatures (`action_name: desc [args: field*(type): ...]`) are encoded in the tool **description** text, not in the schema. Never loosen `args` to an untyped `{ type: "object" }` passthrough.
 - `tools/call` routes to `NATIVE[instance.type].call(instanceId, action, args)`
-- Tool access filters apply: disabled actions excluded from `oneOf` branches and rejected at call time
+- Tool access filters apply: disabled actions excluded from the `action` enum and rejected at call time
 - The `mcp-session-id` header value is captured on every `tools/call` and stored in `tool_call_log.session_id`
 
 Claude Code config (alias is `mcpetty`, not the instance type name):
@@ -299,7 +299,7 @@ Lives in `~/.claude.json` under `projects.<absolute-path>.mcpServers`. `claude m
 ## Behaviour rules
 
 - **Never delete an MCP handler, catalog entry, or native registration without explicit confirmation.** Renaming a UI label or alias is not the same as removing the MCP. Ask if unclear.
-- **Never revert the `oneOf` discriminated union schema in `buildPlatformTool()`.** It replaced the untyped `args` pattern deliberately — do not simplify it back.
+- **Never loosen the typed gateway schema in `buildPlatformTool()`.** `action` must stay a strict `enum` and `args` must keep typed `properties` with `additionalProperties: false` — do not replace it with an untyped `args: { type: "object" }` passthrough.
 
 ---
 

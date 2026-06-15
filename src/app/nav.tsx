@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useDemo } from './demo'
 
 const LOGO = `███╗   ███╗ ██████╗██████╗ ███████╗████████╗████████╗██╗   ██╗
 ████╗ ████║██╔════╝██╔══██╗██╔════╝╚══██╔══╝╚══██╔══╝╚██╗ ██╔╝
@@ -22,7 +23,7 @@ type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Namespaces' | 'Settings
 
 export { type ActiveTab }
 
-const VERSION = 'v1.05'
+const VERSION = 'v2.0.1'
 
 export function Footer({ motto }: { motto: string }) {
   return (
@@ -36,6 +37,7 @@ export function Footer({ motto }: { motto: string }) {
 export function Nav({ active, approvalCount, onApprovalsClick }: { active?: ActiveTab; approvalCount?: number; onApprovalsClick?: () => void }) {
   const [light, setLight] = useState(false)
   const [anon,  setAnon]  = useState(false)
+  const demo              = useDemo()
 
   useEffect(() => {
     setLight(document.documentElement.classList.contains('light'))
@@ -59,6 +61,11 @@ export function Nav({ active, approvalCount, onApprovalsClick }: { active?: Acti
           {LOGO}
         </pre>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {demo && (
+            <span style={{ fontSize: 10, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 3, padding: '2px 6px', fontFamily: 'monospace', letterSpacing: 1 }}>
+              DEMO
+            </span>
+          )}
           {anon && (
             <span style={{ fontSize: 10, color: 'var(--yellow)', border: '1px solid var(--yellow)', borderRadius: 3, padding: '2px 6px', fontFamily: 'monospace', letterSpacing: 1 }}>
               ANON

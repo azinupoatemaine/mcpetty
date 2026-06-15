@@ -23,7 +23,7 @@ type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Namespaces' | 'Settings
 
 export { type ActiveTab }
 
-const VERSION = 'v2.0.1'
+const VERSION = 'v2.0.2'
 
 export function Footer({ motto }: { motto: string }) {
   return (

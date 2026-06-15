@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
 import { useAnon, buildAnonMap, ap } from './anon'
@@ -1149,6 +1149,7 @@ export default function InsightsClient() {
   const daysArr                 = getLastNDays(days)
   const anon                    = useAnon()
   const demo                    = useDemo()
+  const reqId                   = useRef(0)
 
   const anonMap = useMemo(() => {
     if (!data) return new Map<string, string>()
@@ -1160,6 +1161,7 @@ export default function InsightsClient() {
   }, [data])
 
   const load = useCallback(async () => {
+    const id = ++reqId.current
     if (demo) {
       setData(demoInsights(days))
       setLoading(false)
@@ -1167,9 +1169,11 @@ export default function InsightsClient() {
     }
     setLoading(true)
     try {
-      const url = `/api/insights?days=${days}${platform ? `&platform=${encodeURIComponent(platform)}` : ''}`
-      setData(await fetch(url).then((r) => r.json()))
-    } finally { setLoading(false) }
+      const url  = `/api/insights?days=${days}${platform ? `&platform=${encodeURIComponent(platform)}` : ''}`
+      const next = await fetch(url).then((r) => r.json())
+      if (id !== reqId.current) return   // a newer load (e.g. demo toggled) superseded this one
+      setData(next)
+    } finally { if (id === reqId.current) setLoading(false) }
   }, [days, platform, demo])
 
   useEffect(() => { load() }, [load])

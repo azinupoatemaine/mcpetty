@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
 import { useAnon } from './anon'
@@ -1325,8 +1325,10 @@ export default function Dashboard() {
   const [snarkies]                  = useState(() => ({ online: shuffle(SNARKY_ONLINE), offline: shuffle(SNARKY_OFFLINE) }))
   const [countdown, setCountdown]   = useState<number | null>(null)
   const demo                        = useDemo()
+  const reqId                       = useRef(0)
 
   const fetchServers = useCallback(async () => {
+    const id = ++reqId.current
     if (demo) {
       setServers(DEMO_SERVERS)
       setLast(new Date())
@@ -1337,11 +1339,13 @@ export default function Dashboard() {
     setLoading(true)
     setCountdown(null)
     try {
-      const res = await fetch('/api/servers')
-      setServers(await res.json())
+      const res  = await fetch('/api/servers')
+      const data = await res.json()
+      if (id !== reqId.current) return   // a newer fetch (e.g. demo toggled) superseded this one
+      setServers(data)
       setLast(new Date())
       setCountdown(120)
-    } catch { /* silent */ } finally { setLoading(false) }
+    } catch { /* silent */ } finally { if (id === reqId.current) setLoading(false) }
   }, [demo])
 
   const pollApprovals = useCallback(async () => {

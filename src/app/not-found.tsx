@@ -27,7 +27,7 @@ export default function NotFound() {
           Page not found.
         </div>
         <div style={{ color: S.muted, fontSize: 13, marginBottom: 4 }}>
-          Whatever you were looking for, it's not here.
+          Whatever you were looking for, it&apos;s not here.
         </div>
         <div style={{ color: S.dim, fontSize: 12, marginBottom: 40, lineHeight: 1.6, maxWidth: 420 }}>
           It never was. Or it was and someone deleted it. Either way, this is on you.

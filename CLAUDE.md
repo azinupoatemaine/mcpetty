@@ -303,17 +303,17 @@ Lives in `~/.claude.json` under `projects.<absolute-path>.mcpServers`. `claude m
 
 ---
 
-## Homelab constraint — container memory
+## Constraint — container memory
 
-The production container has limited memory. **scrypt N=65536 requires ~64MB and crashes with ERR_CRYPTO_INVALID_SCRYPT_PARAMS.** The max viable scrypt params are `{ N: 16384, r: 8, p: 1 }`. Do not raise N again without first confirming available container memory.
+MCPetty is meant to run in memory-constrained containers. **scrypt N=65536 requires ~64MB and crashes with ERR_CRYPTO_INVALID_SCRYPT_PARAMS** on small containers. The max viable scrypt params are `{ N: 16384, r: 8, p: 1 }`. Do not raise N without confirming the deployment has the memory headroom.
 
 ---
 
-## Homelab constraint — HTTP everywhere
+## Constraint — HTTP and self-signed TLS
 
-User's homelab has no valid TLS certificates. All backends use plain HTTP or HTTPS with self-signed certs. This is a hard constraint, not a bug:
+MCPetty targets self-hosted deployments, which frequently have no valid TLS certificates — backends are reached over plain HTTP or HTTPS with self-signed certs. This is a hard product constraint, not a bug:
 
-- `secure: false` on session cookie **must stay** — dashboard is served over HTTP
+- `secure: false` on session cookie **must stay** — dashboard may be served over HTTP
 - `NODE_TLS_REJECT_UNAUTHORIZED = '0'` in `instrumentation.ts` **must stay** — self-signed backends
 - Never enforce HTTPS-only for outbound connections (webhooks, MCP_URL, any native handler URL)
 - Allow HTTP URLs everywhere user-supplied credentials are accepted
@@ -328,14 +328,14 @@ User's homelab has no valid TLS certificates. All backends use plain HTTP or HTT
 - `sameSite: 'strict'` on session cookie.
 - `DELETE /mcp` requires valid Bearer token.
 - `docker_proxy` and `kubernetes_proxy` in portainer.ts: method restricted to GET/POST/PUT/DELETE, body validated as JSON.
-- Webhook test endpoint blocks loopback (127.x, localhost, ::1) and link-local (169.254.x). RFC1918 is allowed — user legitimately sends webhooks to homelab services.
+- Webhook test endpoint blocks loopback (127.x, localhost, ::1) and link-local (169.254.x). RFC1918 is allowed — self-hosted deployments legitimately target private-network services.
 - Gateway ID in LIKE queries escaped with `ESCAPE '\\'` via `escapeLike()` in db.ts.
 
 ---
 
 ## Proxmox native handler
 
-`src/lib/native/proxmox.ts` — 30 tools. Key patterns:
+`src/lib/native/proxmox.ts` — 38 tools. Key patterns:
 
 - Auth: `PVEAPIToken=user@realm!tokenname=value` header (not Bearer). Uses `authScheme: ''` in `restFetch`.
 - All mutations use `pveMutate()` — sends `application/x-www-form-urlencoded` (Proxmox rejects JSON for POST/PUT).
@@ -349,10 +349,10 @@ User's homelab has no valid TLS certificates. All backends use plain HTTP or HTT
 
 ## MCP roadmap — next to build
 
-Priority order based on user's running stacks:
+Candidate native handlers to build next:
 
-1. **Firefly III** — Personal finance REST API. User already ran a standalone `firefly-iii-mcp` container — replace with native handler. Credential: `FIREFLY_URL` + `FIREFLY_TOKEN` (Personal Access Token from profile).
-2. **Paperless-NGX** — Document management. REST API at `/api/`. Key tools: search documents, get content/metadata, list tags/correspondents/document types. Romanian + English OCR already configured.
+1. **Firefly III** — Personal finance REST API. Credential: `FIREFLY_URL` + `FIREFLY_TOKEN` (Personal Access Token from profile).
+2. **Paperless-NGX** — Document management. REST API at `/api/`. Key tools: search documents, get content/metadata, list tags/correspondents/document types.
 3. **n8n** — Workflow automation. API: list workflows, get executions, trigger via webhook or API. Credential: `N8N_URL` + `N8N_API_KEY`.
 4. **Jellyfin** — Media server. REST API: search library, get items, manage users, trigger scans. Credential: `JELLYFIN_URL` + `JELLYFIN_TOKEN` (API key from dashboard).
 5. **Ollama** — Local LLM. API: list models, generate, pull models. Credential: `OLLAMA_URL` (no auth by default).

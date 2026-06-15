@@ -1,7 +1,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     // Disable TLS cert validation globally at startup.
-    // Self-signed certs are standard in homelab Proxmox / private services.
+    // Self-signed certs are common in self-hosted / private services.
     // Setting this once here avoids the race condition caused by toggling the
     // env var per-request in an async event loop.
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'

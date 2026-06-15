@@ -184,7 +184,7 @@ function buildPlatformTool(
   const actionLines = enabled.map((t) => {
     const req   = new Set(t.inputSchema?.required ?? [])
     const props = t.inputSchema?.properties ?? {}
-    const parts = Object.entries(props).map(([k, v]: [string, any]) =>
+    const parts = Object.entries(props as Record<string, { type?: string; description?: string }>).map(([k, v]) =>
       `${k}${req.has(k) ? '*' : ''}(${v.type ?? 'any'})${v.description ? ': ' + v.description : ''}`
     )
     const desc = descOverrides?.[t.name] ?? t.description ?? ''

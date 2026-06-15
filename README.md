@@ -126,6 +126,8 @@ Derived from your master secret via HKDF. Stable across restarts. Changes only i
 - **Health check** — configure an automatic ping interval and fail threshold per native instance. Broken instances are auto-disabled after N consecutive failures and re-enabled when they recover. Configurable in the gear modal.
 - **Approval queue** — red pulsing badge in the nav when any approvals are pending. Click to open a slide-in panel: approve or reject each request with optional reason, see full args, and browse decision history.
 - **Charts** — latency bars and tool count per server; online/total ring
+- **Auto-refresh** — server status reloads on a 120s countdown (shown on the refresh button); manual refresh any time.
+- **Light/dark theme** — toggle (☀/☾) in the top-right of the nav, on every page. Preference is remembered.
 - **Snarky status lines** — each card gets a non-repeating snarky status message. The list is shuffled once on mount; all 15+ statuses are shown before any repeats.
 
 ---
@@ -175,6 +177,15 @@ The master gateway (`/mcp`) is **disabled by default**. It accepts a single API 
 
 ### Meta MCP
 Toggle that installs MCPetty itself as a read-only MCP tool. Lets your AI agent query MCPetty — installed servers, call history, error patterns, sessions — without leaving the conversation. Actions: `get_status`, `get_insights_summary`, `get_recent_calls`, `get_error_patterns`, `get_top_actions`, `get_sessions`.
+
+### Allowed Origins
+Hostnames permitted in the `Origin` header when the `/mcp` gateway is hit from a browser. One per line. Default (empty) allows only `127.0.0.1` and `localhost`. Lets you front MCPetty with a browser-based agent without opening it up to arbitrary origins.
+
+### Privacy Mode
+Anonymizes the UI for safe screenshots and demos. Instance names render as `Instance N` / `mcp-N` and call args are redacted in Insights, across every page. An `ANON` badge appears in the nav while active. Nothing is deleted — toggle off to restore real names. Independent of Argument Redaction (which alters what's written to the log; Privacy Mode only changes what's displayed).
+
+### Demo Mode
+Fills the Dashboard and Insights with invented, fully-populated sample data — useful for screenshots and the README. Shows a set of fake MCPs with busy charts; a `DEMO` badge appears in the nav while active. Purely cosmetic and client-side — no data is fetched, written, or deleted, and your real data returns the moment you toggle it off.
 
 ### Changelog
 Read-only audit trail of every config change — installs, uninstalls, credential rotations, tool filter edits, gateway changes. Filterable by 7/30/90 days.
@@ -283,7 +294,7 @@ MCPetty implements the **STRAP pattern** (Single Tool Resource Action Pattern) [
 
 ### The problem it solves
 
-Without MCPetty, connecting multiple services exposes the raw tool lists to your agent directly. Portainer alone has **39 tools**. WikiJS has **18**. Add Proxmox (30), Wazuh (57), and a second Portainer instance, and you're at **183 tools** before the conversation even starts.
+Without MCPetty, connecting multiple services exposes the raw tool lists to your agent directly. Portainer alone has **39 tools**. WikiJS has **18**. Add Proxmox (38), Wazuh (57), and a second Portainer instance, and you're at **191 tools** before the conversation even starts.
 
 This causes real, documented problems:
 - **Tool calling accuracy drops** as tool count grows — the decline starts at surprisingly low numbers [[2]](https://dev.to/nebulagg/mcp-tool-overload-why-more-tools-make-your-agent-worse-5a49)

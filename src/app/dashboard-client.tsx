@@ -122,8 +122,8 @@ function shuffle<T>(arr: T[]): T[] {
 // ─── Graphs ───────────────────────────────────────────────────────────────────
 
 function Charts({ servers }: { servers: ServerData[] }) {
-  if (servers.length === 0) return null
   const anon = useAnon()
+  if (servers.length === 0) return null
 
   const online     = servers.filter((s) => s.online)
   const maxLatency = Math.max(...online.map((s) => s.latencyMs ?? 0), 100)

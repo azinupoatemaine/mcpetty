@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
 import { useAnon, buildAnonMap, ap } from './anon'
+import { useDemo } from './demo'
 
 const PLAT_COLORS = [S.green, '#00bfff', S.yellow, '#ff69b4', '#a855f7', '#f97316', '#06b6d4']
 
@@ -1009,6 +1010,136 @@ const TABS: { id: Tab; label: string }[] = [
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+// ─── Demo data ──────────────────────────────────────────────────────────────
+// Invented, fully-populated insights shown when demo mode is on, so every chart
+// looks "in use" for screenshots. No network, no DB — purely presentational.
+
+const DEMO_PLATS = [
+  { id: 'proxmox-prod',   name: 'Production Cluster' },
+  { id: 'portainer-home', name: 'Home Lab Docker' },
+  { id: 'wikijs-kb',      name: 'Knowledge Base' },
+  { id: 'firefly-fin',    name: 'Finances' },
+  { id: 'proxmox-backup', name: 'Backup Node' },
+]
+
+function demoInsights(days: number): InsightsData {
+  const daysArr = getLastNDays(days)
+  const now = Date.now()
+  const pattern = [142, 98, 167, 203, 178, 89, 134, 156, 187, 145, 199, 121, 165, 178, 156, 143, 188, 97, 176, 211, 165, 88, 145, 167, 198, 134, 176, 145, 167, 189]
+  const callsPerDay: DayData[] = daysArr.map((date, i) => {
+    const total = pattern[i % pattern.length]
+    return { date, total, errors: Math.max(1, Math.round(total * 0.038)) }
+  })
+  const total  = callsPerDay.reduce((a, d) => a + d.total, 0)
+  const errors = callsPerDay.reduce((a, d) => a + d.errors, 0)
+
+  const weights = [0.34, 0.27, 0.18, 0.14, 0.07]
+  const perPlatform: PlatData[] = DEMO_PLATS.map((p, i) => ({
+    platform: p.id, total: Math.round(total * weights[i]), errors: Math.round(errors * weights[i]),
+  }))
+
+  const perGateway: GatewayData[] = [
+    { gateway_label: 'claude-code',    gateway_id: 'gw_code',    total: Math.round(total * 0.7), errors: Math.round(errors * 0.6) },
+    { gateway_label: 'claude-desktop', gateway_id: 'gw_desktop', total: Math.round(total * 0.3), errors: Math.round(errors * 0.4) },
+  ]
+
+  const topActions: ActionData[] = [
+    { platform: 'proxmox-prod',   action: 'list_vms',          total: 487, errors: 3, avgLatency: 64,  p95Latency: 142 },
+    { platform: 'portainer-home', action: 'list_containers',   total: 421, errors: 7, avgLatency: 91,  p95Latency: 230 },
+    { platform: 'wikijs-kb',      action: 'search_pages',      total: 312, errors: 2, avgLatency: 58,  p95Latency: 134 },
+    { platform: 'proxmox-prod',   action: 'vm_status',         total: 268, errors: 1, avgLatency: 47,  p95Latency: 98  },
+    { platform: 'firefly-fin',    action: 'list_transactions', total: 196, errors: 4, avgLatency: 73,  p95Latency: 168 },
+    { platform: 'portainer-home', action: 'container_logs',    total: 174, errors: 9, avgLatency: 128, p95Latency: 410 },
+    { platform: 'wikijs-kb',      action: 'get_page',          total: 142, errors: 0, avgLatency: 39,  p95Latency: 81  },
+    { platform: 'proxmox-prod',   action: 'start_vm',          total: 88,  errors: 2, avgLatency: 212, p95Latency: 540 },
+  ]
+
+  let idc = 9000
+  const rc = (platform: string, action: string, args: Record<string, unknown>, latency: number, minAgo: number, error: string | null = null): CallRecord => ({
+    id: idc++, timestamp: now - minAgo * 60_000, platform, action,
+    args_json: JSON.stringify(args), outcome: error ? 'error' : 'success', latency_ms: latency, error,
+    gateway_id: null, gateway_name: null, user_agent: 'claude-code/2.1.0', result_json: null,
+  })
+  const recentCalls: CallRecord[] = [
+    rc('proxmox-prod',   'list_vms',           { node: 'pve-01' }, 58, 2),
+    rc('portainer-home', 'restart_container',  { id: 'a3f9', name: 'jellyfin' }, 412, 7),
+    rc('wikijs-kb',      'search_pages',       { query: 'nginx reverse proxy' }, 44, 13),
+    rc('firefly-fin',    'list_transactions',  { account: 'checking', limit: 25 }, 81, 19),
+    rc('portainer-home', 'container_logs',     { name: 'paperless', tail: 200 }, 134, 26, 'container not found'),
+    rc('proxmox-prod',   'vm_status',          { node: 'pve-02', vmid: 104 }, 39, 33),
+    rc('wikijs-kb',      'get_page',           { id: 217 }, 36, 41),
+    rc('proxmox-prod',   'start_vm',           { node: 'pve-01', vmid: 112 }, 248, 52),
+    rc('firefly-fin',    'account_balance',    { account: 'savings' }, 67, 60),
+    rc('portainer-home', 'list_stacks',        {}, 95, 74),
+    rc('proxmox-backup', 'list_backups',       { datastore: 'main' }, 156, 88),
+    rc('wikijs-kb',      'search_pages',       { query: 'proxmox gpu passthrough' }, 51, 103),
+    rc('proxmox-prod',   'cluster_resources',  {}, 72, 121),
+    rc('firefly-fin',    'search_transactions',{ query: 'amazon', range: '30d' }, 119, 140),
+  ]
+
+  const trendPlats = ['proxmox-prod', 'portainer-home', 'wikijs-kb']
+  const trendBase: Record<string, number> = { 'proxmox-prod': 55, 'portainer-home': 95, 'wikijs-kb': 48 }
+  const latencyTrend: LatTrend[] = []
+  daysArr.forEach((date, i) => {
+    trendPlats.forEach((p) => {
+      const wobble = ((i * 7 + p.length * 3) % 11) - 5
+      latencyTrend.push({ date, platform: p, avgLatency: trendBase[p] + wobble * 4 })
+    })
+  })
+
+  const heatmap: HeatCell[] = []
+  for (let dow = 0; dow < 7; dow++) {
+    for (let hour = 0; hour < 24; hour++) {
+      const work    = hour >= 8 && hour <= 20 ? 1 : 0.2
+      const weekday = dow >= 1 && dow <= 5 ? 1 : 0.5
+      const peak    = hour >= 9 && hour <= 12 ? 1.4 : hour >= 14 && hour <= 18 ? 1.2 : 1
+      const v = Math.round(18 * work * weekday * peak + ((hour * 3 + dow * 5) % 7))
+      if (v > 0) heatmap.push({ hour, dow, total: v })
+    }
+  }
+
+  const perUA: UAData[] = [
+    { ua: 'claude-code/2.1.0',    total: Math.round(total * 0.62), errors: Math.round(errors * 0.5) },
+    { ua: 'claude-desktop/1.4.2', total: Math.round(total * 0.28), errors: Math.round(errors * 0.3) },
+    { ua: 'cursor-mcp/0.9.1',     total: Math.round(total * 0.10), errors: Math.round(errors * 0.2) },
+  ]
+
+  const errorPatterns: ErrPattern[] = [
+    { platform: 'portainer-home', action: 'container_logs',    error: 'container not found',            total: 14, last_seen: now - 26 * 60_000 },
+    { platform: 'proxmox-prod',   action: 'start_vm',          error: 'VM is locked (backup running)',  total: 6,  last_seen: now - 3 * 3_600_000 },
+    { platform: 'firefly-fin',    action: 'list_transactions', error: '401 unauthorized — token expired', total: 4, last_seen: now - 9 * 3_600_000 },
+  ]
+
+  const cooccurrence: CoOccur[] = [
+    { tool_a: 'list_vms',        tool_b: 'vm_status',       sessions: 38 },
+    { tool_a: 'list_containers', tool_b: 'container_logs',  sessions: 31 },
+    { tool_a: 'search_pages',    tool_b: 'get_page',        sessions: 27 },
+    { tool_a: 'list_vms',        tool_b: 'start_vm',        sessions: 14 },
+  ]
+
+  const perAction: TokenBurnAction[] = topActions.slice(0, 6).map((a) => ({
+    platform: a.platform, action: a.action, inputTokens: a.total * 180, outputTokens: a.total * 420, calls: a.total,
+  }))
+  const tokenBurn: TokenBurn = {
+    totalInputTokens:  perAction.reduce((s, a) => s + a.inputTokens, 0),
+    totalOutputTokens: perAction.reduce((s, a) => s + a.outputTokens, 0),
+    perAction,
+  }
+
+  const breakdownJson = JSON.stringify(DEMO_PLATS.map((p) => ({ instanceId: p.id, tokens: 600 + p.id.length * 40 })))
+  const schemaTrend: SchemaTokenEntry[] = daysArr.filter((_, i) => i % 2 === 0).map((d) => ({
+    timestamp: new Date(d + 'T12:00:00').getTime(), gatewayId: null, totalTokens: 3800 + (d.charCodeAt(8) % 9) * 60, breakdownJson,
+  }))
+  const latestSchema: SchemaTokenEntry = { timestamp: now - 3_600_000, gatewayId: null, totalTokens: 4120, breakdownJson }
+
+  return {
+    summary: { total, successes: total - errors, avgLatency: 78, retryRate: 6 },
+    callsPerDay, perPlatform, perGateway, topActions, recentCalls, perUA, heatmap,
+    errorPatterns, latencyTrend, cooccurrence, tokenBurn, schemaTrend, latestSchema,
+    allPlatforms: DEMO_PLATS.map((p) => ({ instanceId: p.id, name: p.name })),
+  }
+}
+
 export default function InsightsClient() {
   const [data, setData]         = useState<InsightsData | null>(null)
   const [loading, setLoading]   = useState(true)
@@ -1017,6 +1148,7 @@ export default function InsightsClient() {
   const [tab, setTab]           = useState<Tab>('overview')
   const daysArr                 = getLastNDays(days)
   const anon                    = useAnon()
+  const demo                    = useDemo()
 
   const anonMap = useMemo(() => {
     if (!data) return new Map<string, string>()
@@ -1028,12 +1160,17 @@ export default function InsightsClient() {
   }, [data])
 
   const load = useCallback(async () => {
+    if (demo) {
+      setData(demoInsights(days))
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const url = `/api/insights?days=${days}${platform ? `&platform=${encodeURIComponent(platform)}` : ''}`
       setData(await fetch(url).then((r) => r.json()))
     } finally { setLoading(false) }
-  }, [days, platform])
+  }, [days, platform, demo])
 
   useEffect(() => { load() }, [load])
 

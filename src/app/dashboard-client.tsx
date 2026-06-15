@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
 import { useAnon } from './anon'
+import { useDemo } from './demo'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1248,6 +1249,70 @@ function Library({ onInstalled }: { onInstalled: () => void }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+// ─── Demo data ──────────────────────────────────────────────────────────────
+// Invented servers shown when demo mode is on, so the dashboard + charts look
+// "in use" for screenshots. No network, no DB — purely presentational.
+
+const dt = (name: string, description: string): MCPTool => ({ name, description, inputSchema: { type: 'object', properties: {} } })
+
+const DEMO_SERVERS: ServerData[] = [
+  {
+    id: 'proxmox-prod', type: 'proxmox', name: 'Production Cluster',
+    description: 'Proxmox VE — 3-node cluster, 28 VMs, 11 containers.',
+    url: 'https://pve.lab.internal:8006', online: true, processRunning: false, native: true,
+    serverInfo: { name: 'proxmox', version: '8.2.4' },
+    tools: ['list_nodes', 'list_vms', 'vm_status', 'start_vm', 'stop_vm', 'list_storage', 'list_backups', 'cluster_resources', 'list_snapshots', 'poll_job'].map((n) => dt(n, 'Proxmox operation.')),
+    flags: [], latencyMs: 42, credentials: [], tags: ['prod', 'vm'],
+    healthLastCheckedAt: Date.now() - 38_000, healthLastStatus: 'ok',
+  },
+  {
+    id: 'portainer-home', type: 'portainer', name: 'Home Lab Docker',
+    description: 'Portainer — 42 containers across 6 stacks.',
+    url: 'https://portainer.lab.internal:9443', online: true, processRunning: false, native: true,
+    serverInfo: { name: 'portainer', version: '2.20.3' },
+    tools: ['list_stacks', 'list_containers', 'container_logs', 'restart_container', 'list_images', 'list_volumes', 'stack_status'].map((n) => dt(n, 'Portainer operation.')),
+    flags: [], latencyMs: 88, credentials: [], tags: ['home', 'docker'],
+    healthLastCheckedAt: Date.now() - 54_000, healthLastStatus: 'ok',
+  },
+  {
+    id: 'wikijs-kb', type: 'wikijs', name: 'Knowledge Base',
+    description: 'Wiki.js — 318 pages, full-text search.',
+    url: 'https://wiki.lab.internal', online: true, processRunning: false, native: true,
+    serverInfo: { name: 'wikijs', version: '2.5.307' },
+    tools: ['search_pages', 'get_page', 'list_pages', 'page_tree', 'render_content'].map((n) => dt(n, 'Wiki.js operation.')),
+    flags: [], latencyMs: 61, credentials: [], tags: ['docs'],
+    healthLastCheckedAt: Date.now() - 12_000, healthLastStatus: 'ok',
+  },
+  {
+    id: 'firefly-fin', type: 'firefly', name: 'Finances',
+    description: 'Firefly III — personal finance, 9 accounts.',
+    url: 'https://firefly.lab.internal', online: true, processRunning: false, native: true,
+    serverInfo: { name: 'firefly-iii', version: '6.1.13' },
+    tools: ['list_accounts', 'list_transactions', 'search_transactions', 'budgets', 'categories', 'account_balance'].map((n) => dt(n, 'Firefly III operation.')),
+    flags: [{ level: 'warning', code: 'SENSITIVE_DATA', message: 'Handles financial data', detail: 'Tools expose account balances and transaction history.' }],
+    latencyMs: 73, credentials: [], tags: ['finance'],
+    healthLastCheckedAt: Date.now() - 71_000, healthLastStatus: 'ok',
+  },
+  {
+    id: 'proxmox-backup', type: 'proxmox', name: 'Backup Node',
+    description: 'Proxmox Backup Server — nightly snapshots.',
+    url: 'https://pbs.lab.internal:8007', online: true, processRunning: false, native: true,
+    serverInfo: { name: 'proxmox', version: '3.2.7' },
+    tools: ['list_backups', 'list_datastores', 'verify_backup', 'prune_status'].map((n) => dt(n, 'Backup operation.')),
+    flags: [], latencyMs: 134, credentials: [], tags: ['backup'],
+    healthLastCheckedAt: Date.now() - 90_000, healthLastStatus: 'ok',
+  },
+  {
+    id: 'portainer-edge', type: 'portainer', name: 'Edge Node',
+    description: 'Portainer agent — remote site, flaky uplink.',
+    url: 'https://edge.lab.internal:9443', online: false, processRunning: false, native: true,
+    tools: ['list_stacks', 'list_containers', 'restart_container'].map((n) => dt(n, 'Portainer operation.')),
+    flags: [], error: 'connection refused — host unreachable', credentials: [], tags: ['edge'],
+    healthLastCheckedAt: Date.now() - 120_000, healthLastStatus: 'error', healthLastError: 'connection refused',
+    healthConsecutiveFails: 4, autoDisabled: true,
+  },
+]
+
 export default function Dashboard() {
   const [servers, setServers]       = useState<ServerData[]>([])
   const [loading, setLoading]       = useState(true)
@@ -1259,8 +1324,16 @@ export default function Dashboard() {
   const [tagFilter, setTagFilter]   = useState<Set<string>>(new Set())
   const [snarkies]                  = useState(() => ({ online: shuffle(SNARKY_ONLINE), offline: shuffle(SNARKY_OFFLINE) }))
   const [countdown, setCountdown]   = useState<number | null>(null)
+  const demo                        = useDemo()
 
   const fetchServers = useCallback(async () => {
+    if (demo) {
+      setServers(DEMO_SERVERS)
+      setLast(new Date())
+      setCountdown(120)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setCountdown(null)
     try {
@@ -1269,7 +1342,7 @@ export default function Dashboard() {
       setLast(new Date())
       setCountdown(120)
     } catch { /* silent */ } finally { setLoading(false) }
-  }, [])
+  }, [demo])
 
   const pollApprovals = useCallback(async () => {
     try {

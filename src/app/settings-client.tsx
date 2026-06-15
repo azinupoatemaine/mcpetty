@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Nav, Footer } from './nav'
 import { S } from './styles'
+import { useDemo, setDemo } from './demo'
 
 interface SettingsData {
   settings: Record<string, string>
@@ -507,6 +508,26 @@ function PrivacySection() {
   )
 }
 
+function DemoModeSection() {
+  const on = useDemo()
+
+  return (
+    <Section title="Demo Mode" sub="Fill the dashboard and Insights with invented data — for screenshots and the GitHub README.">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <Toggle on={on} onChange={() => setDemo(!on)} />
+        <span style={{ color: on ? S.green : S.dim, fontSize: 12 }}>
+          {on ? 'active — showing invented servers and a fully-populated Insights view' : 'off'}
+        </span>
+      </div>
+      <div style={{ color: S.dim2, fontSize: 11, lineHeight: 1.6 }}>
+        {on
+          ? 'Dashboard and Insights now render a prefab set of fake MCPs with busy charts. Your real data is untouched and never fetched while this is on. Toggle off to restore.'
+          : 'Replaces your real servers and call history with invented, good-looking sample data so charts and lists look in-use. Nothing is fetched, written, or deleted — purely cosmetic.'}
+      </div>
+    </Section>
+  )
+}
+
 function ChangelogSection() {
   const [entries, setEntries] = useState<ChangelogEntry[] | null>(null)
   const [days,    setDays]    = useState(30)
@@ -674,6 +695,7 @@ export default function SettingsClient() {
           <CacheSection      raw={data.settings} />
           <RedactionSection  raw={data.settings} />
           <PrivacySection />
+          <DemoModeSection />
           <ChangelogSection />
         </>
       )}

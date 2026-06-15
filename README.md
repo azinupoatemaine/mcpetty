@@ -20,6 +20,26 @@ One container. One endpoint. All your services.
 
 ---
 
+## Screenshots
+
+**Dashboard** — every connected service at a glance: online status, latency, tool counts, and tags.
+
+<p align="center">
+  <img src="images/mainpage.png" alt="MCPetty dashboard — live status, latency and tool counts for every connected service" width="460">
+</p>
+
+**Insights** — what your agents actually did. Token cost per tool action, and how much of your context window the tool schemas burn before the conversation even starts.
+
+<p align="center">
+  <img src="images/insights2.png" alt="Insights — token cost per tool action" width="780">
+</p>
+
+<p align="center">
+  <img src="images/insights1.png" alt="Insights — tool-schema token impact on the context window" width="780">
+</p>
+
+---
+
 ## Deploy
 
 ```yaml

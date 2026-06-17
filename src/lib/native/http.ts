@@ -23,7 +23,7 @@ function isCertError(e: unknown): boolean {
   return /self.signed|certificate|CERT_|ERR_TLS|unable to verify/i.test(msg)
 }
 
-// TLS is disabled globally at startup (instrumentation.ts) for homelab self-signed certs.
+// TLS is disabled globally at startup (instrumentation.ts) for self-signed certs.
 // This function exists as a fallback retry path — by the time it's called the env var
 // is already set, so no toggling is needed or safe here.
 async function fetchInsecure(url: string, init: RequestInit): Promise<Response> {

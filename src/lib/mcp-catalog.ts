@@ -98,6 +98,16 @@ export const CATALOG: CatalogEntry[] = [
     ],
   },
   {
+    id:          'n8n',
+    name:        'n8n',
+    description: 'Workflow automation — trigger workflows, inspect executions, and manage your n8n instance.',
+    transport:   'http-proxy',
+    credentials: [
+      { key: 'MCP_URL',   label: 'MCP Endpoint', description: 'e.g. http://192.168.1.x:5678/mcp-server/http', type: 'url',    required: true },
+      { key: 'MCP_TOKEN', label: 'API Key',       description: 'n8n API key from Settings → API → API Keys',   type: 'secret', required: true },
+    ],
+  },
+  {
     id:          'mcpetty',
     name:        'MCPetty Meta',
     description: 'Read-only access to MCPetty itself — installed MCPs, call history, error patterns, and session data.',

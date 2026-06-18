@@ -108,6 +108,16 @@ export const CATALOG: CatalogEntry[] = [
     ],
   },
   {
+    id:          'firefly',
+    name:        'Firefly III',
+    description: 'Personal finance management — accounts, transactions, bills, budgets, categories, tags, and summaries.',
+    transport:   'native',
+    credentials: [
+      { key: 'FIREFLY_URL',   label: 'Firefly III URL', description: 'Base URL of your Firefly III instance e.g. http://192.168.1.x:8080', type: 'url',    required: true },
+      { key: 'FIREFLY_TOKEN', label: 'Personal Access Token', description: 'PAT from Firefly III → Profile → OAuth → Personal Access Tokens', type: 'secret', required: true },
+    ],
+  },
+  {
     id:          'mcpetty',
     name:        'MCPetty Meta',
     description: 'Read-only access to MCPetty itself — installed MCPs, call history, error patterns, and session data.',

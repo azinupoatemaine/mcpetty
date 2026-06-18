@@ -4,6 +4,7 @@ import * as portainer   from './portainer'
 import * as karakeep    from './karakeep'
 import * as proxmox     from './proxmox'
 import * as wazuh       from './wazuh'
+import * as firefly     from './firefly'
 import * as mcpettyMeta from './mcpetty-meta'
 
 export interface NativeHandler {
@@ -37,6 +38,11 @@ export const NATIVE: Record<string, NativeHandler> = {
     tools: wazuh.TOOLS,
     ping:  wazuh.ping,
     call:  wazuh.call,
+  },
+  firefly: {
+    tools: firefly.TOOLS,
+    ping:  firefly.ping,
+    call:  firefly.call,
   },
   mcpetty: {
     tools: mcpettyMeta.TOOLS,

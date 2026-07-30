@@ -15,7 +15,7 @@ const { call } = await import('../../src/lib/native/proxmox')
 
 afterEach(() => vi.unstubAllGlobals())
 
-function mockFetch(body: unknown = { data: 'UPID:pc1:0000:qmshutdown:101:root@pam:' }) {
+function mockFetch(body: unknown = { data: 'UPID:node1:0000:qmshutdown:101:root@pam:' }) {
   const fn = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify(body) })
   vi.stubGlobal('fetch', fn)
   return fn
@@ -31,13 +31,13 @@ const headers  = (fn: ReturnType<typeof vi.fn>) => lastInit(fn).headers as Recor
 //   at character offset 0 (before "(end of string)")
 describe('bodyless mutations declare form-urlencoded, not JSON (issue #7)', () => {
   const BODYLESS: Array<[string, Record<string, unknown>]> = [
-    ['start_vm',          { node: 'pc1', vmid: 101 }],
-    ['stop_vm',           { node: 'pc1', vmid: 101 }],
-    ['shutdown_vm',       { node: 'pc1', vmid: 101 }],
-    ['reset_vm',          { node: 'pc1', vmid: 101 }],
-    ['start_container',   { node: 'pc1', vmid: 200 }],
-    ['stop_container',    { node: 'pc1', vmid: 200, graceful: true }],
-    ['restart_container', { node: 'pc1', vmid: 200 }],
+    ['start_vm',          { node: 'node1', vmid: 101 }],
+    ['stop_vm',           { node: 'node1', vmid: 101 }],
+    ['shutdown_vm',       { node: 'node1', vmid: 101 }],
+    ['reset_vm',          { node: 'node1', vmid: 101 }],
+    ['start_container',   { node: 'node1', vmid: 200 }],
+    ['stop_container',    { node: 'node1', vmid: 200, graceful: true }],
+    ['restart_container', { node: 'node1', vmid: 200 }],
   ]
 
   for (const [action, args] of BODYLESS) {
@@ -53,14 +53,14 @@ describe('bodyless mutations declare form-urlencoded, not JSON (issue #7)', () =
 
   it('DELETE mutations too (cancel_job)', async () => {
     const fn = mockFetch({ data: null })
-    await call('pve', 'cancel_job', { node: 'pc1', upid: 'UPID:pc1:0000:qmstart:101:root@pam:' })
+    await call('pve', 'cancel_job', { node: 'node1', upid: 'UPID:node1:0000:qmstart:101:root@pam:' })
     expect(lastInit(fn).method).toBe('DELETE')
     expect(headers(fn)['Content-Type']).toBe('application/x-www-form-urlencoded')
   })
 
   it('DELETE mutations too (delete_iso)', async () => {
     const fn = mockFetch({ data: null })
-    await call('pve', 'delete_iso', { node: 'pc1', storage: 'local', volid: 'local:iso/debian.iso' })
+    await call('pve', 'delete_iso', { node: 'node1', storage: 'local', volid: 'local:iso/debian.iso' })
     expect(lastInit(fn).method).toBe('DELETE')
     expect(headers(fn)['Content-Type']).toBe('application/x-www-form-urlencoded')
   })
@@ -70,7 +70,7 @@ describe('mutations that do carry a body still serialize it', () => {
   it('encodes params as a urlencoded body', async () => {
     const fn = mockFetch()
     await call('pve', 'create_snapshot', {
-      node: 'pc1', vmid: 101, snapname: 'before-upgrade', description: 'a b', vmstate: true,
+      node: 'node1', vmid: 101, snapname: 'before-upgrade', description: 'a b', vmstate: true,
     })
     expect(headers(fn)['Content-Type']).toBe('application/x-www-form-urlencoded')
     const body = new URLSearchParams(lastInit(fn).body as string)

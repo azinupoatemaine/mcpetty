@@ -62,6 +62,14 @@ No client reconfiguration; existing `claude mcp add` configs keep working.
 
 ### Fixed
 
+- **Proxmox: every bodyless mutation returned HTTP 500** ([#7](../../issues/7)). `pveMutate()`
+  set `Content-Type: application/x-www-form-urlencoded` only when there were params to
+  serialize, so bodyless calls fell through to `restFetch`'s `application/json` default and
+  sent zero bytes. Proxmox parses the body by declared type and failed with *"malformed JSON
+  string ... at character offset 0"* — an error from PVE, not from MCPetty, which made it
+  look like a cluster problem. The header is now set unconditionally for POST/PUT/DELETE.
+  Affected: `start_vm`, `stop_vm`, `shutdown_vm`, `reset_vm`, `start_container`,
+  `stop_container` (both branches), `restart_container`, `delete_iso`, `cancel_job`.
 - **Health auto-disable was a no-op on the gateway.** `installed_mcps.enabled` was written
   by the scheduler and never read on the `tools/call` path, so an instance the scheduler
   had given up on still accepted calls and burned the full 30s native timeout on each.

@@ -83,21 +83,29 @@ async function pve<T = unknown>(base: string, auth: string, path: string): Promi
   return res.data
 }
 
-// POST / PUT / DELETE — Proxmox requires application/x-www-form-urlencoded for mutation bodies
+// POST / PUT / DELETE — Proxmox requires application/x-www-form-urlencoded for mutations.
+//
+// The content-type is set unconditionally, including when there is no body to serialize.
+// restFetch defaults to application/json, so a bodyless mutation that left the header alone
+// would declare JSON and send zero bytes — and PVE::APIServer::AnyEvent parses the body by
+// declared type, giving "malformed JSON string ... at character offset 0" from Proxmox
+// rather than anything MCPetty can see. That broke every bodyless action: start/stop/
+// shutdown/reset VM, start/stop/restart container, delete_iso, cancel_job.
 async function pveMutate<T = unknown>(
   base: string, auth: string, path: string,
   method: 'POST' | 'PUT' | 'DELETE',
   data?: Record<string, unknown>,
 ): Promise<T> {
-  const hasBody = data !== undefined && Object.keys(data).length > 0
-  const init: RequestInit = { method }
-  if (hasBody) {
+  const init: RequestInit = {
+    method,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  }
+  if (data !== undefined && Object.keys(data).length > 0) {
     const p = new URLSearchParams()
-    for (const [k, v] of Object.entries(data!)) {
+    for (const [k, v] of Object.entries(data)) {
       if (v !== undefined && v !== null) p.set(k, String(v))
     }
-    init.body    = p.toString()
-    init.headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
+    init.body = p.toString()
   }
   const res = await restFetch<{ data: T }>(base, path, auth, 'Authorization', '', init)
   return res.data

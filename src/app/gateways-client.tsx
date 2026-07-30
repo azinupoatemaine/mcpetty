@@ -51,7 +51,7 @@ function OneTimeKeyModal({ otk, onClose }: { otk: OneTimeKey; onClose: () => voi
   }, [])
 
   const url = `http://${host}:1234/mcp/${otk.slug}`
-  const cmd = `claude mcp add ${otk.slug} ${url} --transport http --header "Authorization: Bearer ${otk.key}"`
+  const cmd = `claude mcp add ${otk.slug} ${url} --transport http -s user --header "Authorization: Bearer ${otk.key}"`
 
   function copy(text: string, setFn: (v: boolean) => void) {
     copyText(text); setFn(true); setTimeout(() => setFn(false), 2000)
@@ -326,12 +326,16 @@ function NamespaceCard({
             <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Claude Code command</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '7px 10px' }}>
               <code style={{ flex: 1, color: S.text, fontSize: 11, fontFamily: 'monospace', wordBreak: 'break-all', lineHeight: 1.5 }}>
-                {`claude mcp add ${ns.id} ${endpoint} --transport http --header "Authorization: Bearer <key>"`}
+                {`claude mcp add ${ns.id} ${endpoint} --transport http -s user --header "Authorization: Bearer <key>"`}
               </code>
               <button
-                onClick={() => { copyText(`claude mcp add ${ns.id} ${endpoint} --transport http --header "Authorization: Bearer <key>"`); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 2000) }}
+                onClick={() => { copyText(`claude mcp add ${ns.id} ${endpoint} --transport http -s user --header "Authorization: Bearer <key>"`); setCmdCopied(true); setTimeout(() => setCmdCopied(false), 2000) }}
                 style={{ ...btn(cmdCopied ? S.green : S.dim), flexShrink: 0 }}
               >{cmdCopied ? '✓' : 'copy'}</button>
+            </div>
+            <div style={{ color: S.dim2, fontSize: 10, marginTop: 5, lineHeight: 1.5 }}>
+              <code style={{ color: S.dim }}>-s user</code> registers it for your whole machine. Without it Claude Code
+              only sees this server in the one directory you run the command from.
             </div>
           </div>
 

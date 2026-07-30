@@ -241,7 +241,7 @@ Claude Code config (alias is `mcpetty`, not the instance type name):
 ```json
 { "type": "http", "url": "http://<host>:1234/mcp", "headers": { "Authorization": "Bearer <key>" } }
 ```
-Dashboard shows: `claude mcp add mcpetty http://<host>:1234/mcp --transport http --header "Authorization: Bearer <key>"`
+Dashboard shows: `claude mcp add mcpetty http://<host>:1234/mcp --transport http -s user --header "Authorization: Bearer <key>"`
 
 ---
 
@@ -286,7 +286,15 @@ Data volume `mcpetty-data:/app/data` — never wipe unless intentionally resetti
 
 ## Claude Code MCP config
 
-Lives in `~/.claude.json` under `projects.<absolute-path>.mcpServers`. `claude mcp add` writes to the directory Claude Code was opened from. If a session doesn't see an MCP, check which directory it was opened from.
+`claude mcp add` defaults to `-s local`, which writes to `~/.claude.json` under
+`projects.<absolute-path>.mcpServers` — the server then exists **only** in the directory the
+command was run from. This is the single most common "my MCP doesn't work" report: the user
+adds it once, opens Claude Code from a different path, and sees nothing.
+
+**Every suggested command in the dashboard, the README and here must include `-s user`**,
+which stores it at the top level of `~/.claude.json` and makes it available everywhere.
+`-s project` writes a committed `.mcp.json` — never suggest it, since these commands embed a
+bearer token.
 
 ---
 

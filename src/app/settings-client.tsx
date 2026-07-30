@@ -144,8 +144,8 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
 
   const url     = `http://${host}:1234/mcp`
   const masked  = apiKey ? `${apiKey.slice(0, 8)}${'•'.repeat(20)}` : '...'
-  const cmd     = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${apiKey}"` : ''
-  const cmdShow = apiKey ? `claude mcp add mcpetty ${url} --transport http --header "Authorization: Bearer ${masked}"` : '...'
+  const cmd     = apiKey ? `claude mcp add mcpetty ${url} --transport http -s user --header "Authorization: Bearer ${apiKey}"` : ''
+  const cmdShow = apiKey ? `claude mcp add mcpetty ${url} --transport http -s user --header "Authorization: Bearer ${masked}"` : '...'
 
   return (
     <Section title="Master Gateway" sub="The /mcp catch-all endpoint. Disabled by default — use namespaces instead.">
@@ -216,6 +216,10 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
               <button onClick={() => copy(cmd, setCmdCopied)} className="btn" style={{ color: cmdCopied ? S.green : undefined, fontSize: 10, padding: '2px 8px' }}>
                 {cmdCopied ? '✓' : 'copy'}
               </button>
+            </div>
+            <div style={{ color: S.dim, fontSize: 10, marginTop: 5, lineHeight: 1.5 }}>
+              <code>-s user</code> registers it for your whole machine. Without it Claude Code only sees this server in
+              the one directory you run the command from.
             </div>
           </div>
         </div>

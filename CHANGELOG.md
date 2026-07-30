@@ -70,6 +70,14 @@ No client reconfiguration; existing `claude mcp add` configs keep working.
   look like a cluster problem. The header is now set unconditionally for POST/PUT/DELETE.
   Affected: `start_vm`, `stop_vm`, `shutdown_vm`, `reset_vm`, `start_container`,
   `stop_container` (both branches), `restart_container`, `delete_iso`, `cancel_job`.
+- **The dashboard handed out a `claude mcp add` command that only worked in one folder.**
+  `claude mcp add` defaults to `-s local`, which registers the server under
+  `projects.<absolute-path>.mcpServers` in `~/.claude.json` — so it exists only in the
+  directory the command was run from. Copy it from the dashboard, then open Claude Code
+  anywhere else, and the server is silently absent. Every suggested command (Settings, the
+  namespace card, the one-time-key modal, README) now includes `-s user`, with a line
+  explaining what the flag does. `-s project` is deliberately never suggested: it writes a
+  committed `.mcp.json`, and these commands embed a bearer token.
 - **Health auto-disable was a no-op on the gateway.** `installed_mcps.enabled` was written
   by the scheduler and never read on the `tools/call` path, so an instance the scheduler
   had given up on still accepted calls and burned the full 30s native timeout on each.

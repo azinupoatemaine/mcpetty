@@ -95,8 +95,13 @@ The **Settings** page shows the master gateway endpoint and a ready-to-copy comm
 ```bash
 claude mcp add mcpetty http://your-host:1234/mcp \
   --transport http \
+  -s user \
   --header "Authorization: Bearer <your-api-key>"
 ```
+
+`-s user` registers the server for your whole machine. Leave it off and Claude Code
+installs it **only in the directory you ran the command from** — open Claude Code anywhere
+else and the server simply isn't there.
 
 For any other MCP-compatible agent, point it at `http://your-host:1234/mcp` with the Bearer token in the `Authorization` header.
 

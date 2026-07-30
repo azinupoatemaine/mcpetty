@@ -4,6 +4,21 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 RUN npm install
 COPY . .
+
+# Build metadata. The image is always tagged :latest (main) or :<branch>, so the tag cannot
+# tell you which commit is running — this can. NEXT_PUBLIC_* is inlined by `next build` at
+# build time, not read at runtime, so these must be set before the build step.
+#
+# Declared after COPY . . deliberately: the ENV invalidates every layer below it, and the
+# source copy already changes on every commit, so nothing extra is lost. npm install stays
+# cached above.
+ARG BUILD_SHA=""
+ARG BUILD_TIME=""
+ARG BUILD_REF=""
+ENV NEXT_PUBLIC_BUILD_SHA=$BUILD_SHA \
+    NEXT_PUBLIC_BUILD_TIME=$BUILD_TIME \
+    NEXT_PUBLIC_BUILD_REF=$BUILD_REF
+
 RUN npm run build
 
 FROM node:22-alpine AS runner

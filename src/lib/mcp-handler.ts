@@ -14,6 +14,7 @@ import { NATIVE } from './native'
 import { getStdioBridge } from './process-manager'
 import { registerSSEClient, unregisterSSEClient } from './sse-bus'
 import { getCredential } from './db'
+import { APP_VERSION } from './version'
 
 const NATIVE_TIMEOUT_MS = 30_000
 
@@ -422,7 +423,7 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
     const res = rpcOk(id, {
       protocolVersion: LATEST_PROTOCOL_VERSION,
       capabilities:    { tools: { listChanged: true }, prompts: { listChanged: true } },
-      serverInfo:      { name: 'MCPetty', version: '1.0.5' },
+      serverInfo:      { name: 'MCPetty', version: APP_VERSION },
       instructions:    "One tool per platform. Call with { action: '<action>', args: { ... } }. Available actions are listed in each tool's description.",
     })
     res.headers.set('mcp-session-id', sessionId)

@@ -35,11 +35,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Surfaced in the dashboard footer so a running instance can be identified — the image
+      # tag is always :latest or :<branch> and says nothing about which commit is deployed.
+      - name: Collect build metadata
+        id: meta
+        run: |
+          echo "sha=$(git rev-parse --short=7 HEAD)"        >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"        >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_branch == 'main' && 'latest' || github.event.workflow_run.head_branch }}
+          build-args: |
+            BUILD_SHA=${{ steps.meta.outputs.sha }}
+            BUILD_TIME=${{ steps.meta.outputs.time }}
+            BUILD_REF=${{ github.event.workflow_run.head_branch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

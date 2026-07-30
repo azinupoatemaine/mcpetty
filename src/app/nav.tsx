@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useDemo } from './demo'
+import { buildLabel, buildDetail } from '../lib/version'
 
 const LOGO = `███╗   ███╗ ██████╗██████╗ ███████╗████████╗████████╗██╗   ██╗
 ████╗ ████║██╔════╝██╔══██╗██╔════╝╚══██╔══╝╚══██╔══╝╚██╗ ██╔╝
@@ -23,12 +24,12 @@ type ActiveTab = 'Dashboard' | 'Library' | 'Insights' | 'Namespaces' | 'Settings
 
 export { type ActiveTab }
 
-const VERSION = 'v2.0.2'
-
 export function Footer({ motto }: { motto: string }) {
   return (
     <div style={{ marginTop: 64, borderTop: '1px solid var(--border)', paddingTop: 16, color: 'var(--dim)', fontSize: 11, display: 'flex', justifyContent: 'space-between' }}>
-      <span>MCPetty {VERSION} — built by someone who had better things to do</span>
+      <span>
+        MCPetty <span title={buildDetail()} style={{ cursor: 'help', borderBottom: '1px dotted var(--border)' }}>{buildLabel()}</span> — built by someone who had better things to do
+      </span>
       <span>{motto}</span>
     </div>
   )

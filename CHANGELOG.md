@@ -102,6 +102,15 @@ No client reconfiguration; existing `claude mcp add` configs keep working.
   tool count, and flags the reachable-but-zero-tools case. Button in the install form.
 - **"Any Remote MCP" catalog entry** (`custom`) — point MCPetty at any Streamable HTTP MCP
   server and it inherits tool filters, approvals, namespaces and telemetry without a handler.
+- **Build identification in the footer.** The image is always tagged `:latest` (main) or
+  `:<branch>`, so nothing on a running instance said which commit it was. The footer now
+  shows `v<version> · <short sha>`, with branch, full SHA and build timestamp on hover.
+  Injected as Docker build args and inlined by `next build`; a local or arg-less build reads
+  `dev` rather than pretending to be a release.
+
+  This also collapses three hardcoded version strings that had drifted apart —
+  `nav.tsx` said `v2.0.2`, `package.json` said `0.1.0`, and the MCP `serverInfo` said
+  `1.0.5`. All now read from `src/lib/version.ts`.
 
 ### Deliberately unchanged
 

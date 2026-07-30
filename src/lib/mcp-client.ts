@@ -140,6 +140,17 @@ export function analyzeServer(
 
 // --- MCP protocol ---
 
+// Every call below talks to a user-supplied URL (http-proxy instances) or a subprocess
+// port. Bare fetch has no overall response deadline — undici's default header timeout is
+// minutes — so a backend that accepts the connection and then stalls used to hang the
+// dashboard indefinitely, since /api/servers probes every instance in one Promise.all and
+// waits for the slowest. Matches FETCH_TIMEOUT_MS in native/http.ts.
+const MCP_TIMEOUT_MS = 5000
+
+function withTimeout(init: RequestInit): RequestInit {
+  return { ...init, signal: AbortSignal.timeout(MCP_TIMEOUT_MS) }
+}
+
 function parseSSEResponse(text: string): unknown {
   const lines = text.split('\n')
   for (const line of lines) {
@@ -162,7 +173,7 @@ export async function initSession(
   url: string,
   headers: Record<string, string> = {}
 ): Promise<{ sessionId: string; serverInfo: MCPServerStatus['serverInfo'] }> {
-  const res = await fetch(url, {
+  const res = await fetch(url, withTimeout({
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -179,7 +190,7 @@ export async function initSession(
         clientInfo: { name: 'mcpetty', version: '1.0.0' },
       },
     }),
-  })
+  }))
 
   const sessionId = res.headers.get('mcp-session-id') || ''
   const text = await res.text()
@@ -205,7 +216,7 @@ export async function listTools(
   const seenCursors = new Set<string>()
 
   do {
-    const res = await fetch(url, {
+    const res = await fetch(url, withTimeout({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -219,7 +230,7 @@ export async function listTools(
         method: 'tools/list',
         params: cursor ? { cursor } : {},
       }),
-    })
+    }))
 
     const text = await res.text()
     const data = parseSSEResponse(text) as {
@@ -253,7 +264,7 @@ export async function callTool(
 ): Promise<unknown> {
   const { sessionId } = await initSession(url, headers)
 
-  const res = await fetch(url, {
+  const res = await fetch(url, withTimeout({
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -267,7 +278,7 @@ export async function callTool(
       method: 'tools/call',
       params: { name: toolName, arguments: args },
     }),
-  })
+  }))
 
   const text = await res.text()
   const data = parseSSEResponse(text) as { result?: unknown; error?: unknown }

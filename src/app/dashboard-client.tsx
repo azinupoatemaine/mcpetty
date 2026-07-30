@@ -1328,7 +1328,7 @@ export default function Dashboard() {
   const reqId                       = useRef(0)
   const hasLoadedOnce               = useRef(false)
 
-  const fetchServers = useCallback(async () => {
+  const fetchServers = useCallback(async (fresh = false) => {
     const id = ++reqId.current
     if (demo) {
       setServers(DEMO_SERVERS)
@@ -1346,7 +1346,7 @@ export default function Dashboard() {
     if (!hasLoadedOnce.current) setLoading(true)
     setCountdown(null)
     try {
-      const res  = await fetch('/api/servers')
+      const res  = await fetch(fresh ? '/api/servers?fresh=1' : '/api/servers')
       const data = await res.json()
       if (id !== reqId.current) return   // a newer fetch (e.g. demo toggled) superseded this one
       setServers(data)
@@ -1372,7 +1372,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (countdown === null || loading) return
-    if (countdown === 0) { fetchServers(); return }
+    if (countdown === 0) { fetchServers(true); return }
     const t = setTimeout(() => setCountdown((c) => (c !== null ? c - 1 : null)), 1000)
     return () => clearTimeout(t)
   }, [countdown, loading, fetchServers])
@@ -1417,7 +1417,7 @@ export default function Dashboard() {
           {lastRefresh && <span style={{ color: S.dim }}>checked {lastRefresh.toLocaleTimeString()}</span>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={fetchServers} disabled={loading} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 4, color: S.dim, fontSize: 12, padding: '4px 12px', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace', minWidth: 92 }}>
+          <button onClick={() => fetchServers(true)} disabled={loading} style={{ background: 'none', border: `1px solid ${S.border}`, borderRadius: 4, color: S.dim, fontSize: 12, padding: '4px 12px', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'monospace', minWidth: 92 }}>
             {loading ? '...' : countdown !== null ? `↺ ${countdown}s` : '↺ refresh'}
           </button>
           <button onClick={logout} style={{ background: 'none', border: '1px solid #2a1a1a', borderRadius: 4, color: '#884444', fontSize: 12, padding: '4px 12px', cursor: 'pointer', fontFamily: 'monospace' }}>
@@ -1467,7 +1467,7 @@ export default function Dashboard() {
                 index={i}
                 snarky={snarky}
                 onInvoke={setModal}
-                onRefresh={fetchServers}
+                onRefresh={() => fetchServers(true)}
                 onUninstall={async () => {
                   const answer = window.prompt(`Type "yes" to uninstall "${s.name}". All credentials will be deleted.`)
                   if (answer?.toLowerCase() !== 'yes') return

@@ -80,6 +80,21 @@ No client reconfiguration; existing `claude mcp add` configs keep working.
 - **`tools/list` no longer probes everything on every call.** Probes are cached per instance
   for 60s; a fresh scheduler health record is trusted instead of re-probing. Invalidated on
   install, uninstall, credential change, and health flips.
+- **Front page was slow to load.** `/api/servers` probes every instance in one `Promise.all`,
+  so the dashboard waits on the slowest backend, and it ran on every mount with no cache.
+  Two causes, both fixed:
+  - `mcp-client.ts` used bare `fetch` with **no timeout at all** (unlike `native/http.ts`,
+    which has a 5s deadline). An `http-proxy` backend that accepted the connection and then
+    stalled would hang the dashboard for minutes — undici's default header timeout. All
+    three call paths (`initSession`, `listTools`, `callTool`) now use a 5s deadline.
+  - Network probes are cached for 30s in `src/lib/instance-probe.ts`, so navigation and
+    reloads are instant. `?fresh=1` bypasses it; the dashboard sends it for the refresh
+    button and the 120s auto-poll, so an explicit refresh always re-probes. Name, tags and
+    health config are still read from SQLite on every request — only the network half is
+    cached, so an edit never looks stale.
+
+  `invalidatePlatformProbe()` now clears both this and the gateway's `tools/list` cache, so
+  one call covers install, uninstall and credential changes.
 - **Cert-error retry reused a spent `AbortSignal`**, so the retry could abort before leaving
   the process. Each attempt now gets a fresh timeout.
 - **`writeSecretFile()` now fsyncs before rename** and cleans up its temp file on failure.

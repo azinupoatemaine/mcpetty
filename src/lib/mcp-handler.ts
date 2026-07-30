@@ -15,6 +15,7 @@ import { getStdioBridge } from './process-manager'
 import { registerSSEClient, unregisterSSEClient } from './sse-bus'
 import { getCredential } from './db'
 import { APP_VERSION } from './version'
+import { invalidateInstanceProbe } from './instance-probe'
 
 const NATIVE_TIMEOUT_MS = 30_000
 
@@ -265,6 +266,9 @@ const probeCache = new Map<string, ProbeEntry>()
 export function invalidatePlatformProbe(instanceId?: string): void {
   if (instanceId) probeCache.delete(instanceId)
   else probeCache.clear()
+  // The dashboard keeps its own probe cache; one invalidation should clear both so an
+  // install or credential edit is reflected everywhere without a manual refresh.
+  invalidateInstanceProbe(instanceId)
 }
 
 // A health record counts as authoritative only while the scheduler is actually maintaining

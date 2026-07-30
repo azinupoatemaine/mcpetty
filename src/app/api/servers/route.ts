@@ -1,57 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInstalledMCPs, getCredential } from '../../../lib/db'
+import { getInstalledMCPs } from '../../../lib/db'
 import { findCatalogEntry } from '../../../lib/mcp-catalog'
-import { checkServer, analyzeServer } from '../../../lib/mcp-client'
-import { isRunning, getStdioBridge } from '../../../lib/process-manager'
 import { isAuthorizedRequest } from '../../../lib/auth'
-import { NATIVE } from '../../../lib/native'
+import { probeInstance } from '../../../lib/instance-probe'
 
+// GET /api/servers[?fresh=1]
+//
+// Probes are cached for 30s (see instance-probe.ts) because this runs on every dashboard
+// mount and waits on the slowest backend. `fresh=1` forces a real probe — the dashboard
+// sends it for the manual refresh button and the auto-poll, so only navigation and reloads
+// are served from cache.
 export async function GET(req: NextRequest) {
   if (!isAuthorizedRequest(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const fresh     = req.nextUrl.searchParams.get('fresh') === '1'
   const installed = getInstalledMCPs()
 
   const results = await Promise.all(
-    installed.map(async ({ instanceId, type, name, port, tags, healthCheckIntervalSeconds, healthCheckFailThreshold, healthConsecutiveFails, healthLastCheckedAt, healthLastStatus, healthLastError, autoDisabled }) => {
-      const entry = findCatalogEntry(type)
+    installed.map(async (inst) => {
+      const entry = findCatalogEntry(inst.type)
       if (!entry) return null
 
-      const healthFields = { healthCheckIntervalSeconds, healthCheckFailThreshold, healthConsecutiveFails, healthLastCheckedAt, healthLastStatus, healthLastError, autoDisabled }
-      const base = { id: instanceId, type, name, description: entry.description, credentials: entry.credentials, tags, ...healthFields }
+      const probe = await probeInstance(inst, fresh)
+      if (!probe) return null
 
-      if (entry.transport === 'native') {
-        const handler = NATIVE[type]
-        if (!handler) return null
-        const start = Date.now()
-        const { ok, error } = await handler.ping(instanceId)
-        const flags = analyzeServer(`native:${instanceId}`, {}, handler.tools, true)
-        return { ...base, url: `native:${instanceId}`, native: true, online: ok, processRunning: true, tools: ok ? handler.tools : [], flags, error, latencyMs: Date.now() - start }
+      // DB-derived fields are read fresh every time — only the network probe is cached.
+      return {
+        id:          inst.instanceId,
+        type:        inst.type,
+        name:        inst.name,
+        description: entry.description,
+        credentials: entry.credentials,
+        tags:        inst.tags,
+        healthCheckIntervalSeconds: inst.healthCheckIntervalSeconds,
+        healthCheckFailThreshold:   inst.healthCheckFailThreshold,
+        healthConsecutiveFails:     inst.healthConsecutiveFails,
+        healthLastCheckedAt:        inst.healthLastCheckedAt,
+        healthLastStatus:           inst.healthLastStatus,
+        healthLastError:            inst.healthLastError,
+        autoDisabled:               inst.autoDisabled,
+        ...probe,
       }
-
-      if (entry.transport === 'stdio') {
-        const bridge = getStdioBridge(instanceId)
-        const start  = Date.now()
-        if (!bridge) return { ...base, url: `stdio:${instanceId}`, online: false, processRunning: false, tools: [], flags: [], error: 'Process not running', latencyMs: 0 }
-        try {
-          const tools = await bridge.listTools()
-          return { ...base, url: `stdio:${instanceId}`, online: true, processRunning: true, tools, flags: analyzeServer(`stdio:${instanceId}`, {}, tools, true), latencyMs: Date.now() - start }
-        } catch (e) {
-          return { ...base, url: `stdio:${instanceId}`, online: false, processRunning: isRunning(instanceId), tools: [], flags: [], error: e instanceof Error ? e.message : 'Unknown', latencyMs: Date.now() - start }
-        }
-      }
-
-      if (entry.transport === 'http-proxy') {
-        const url   = getCredential(instanceId, 'MCP_URL')
-        const token = getCredential(instanceId, 'MCP_TOKEN')
-        if (!url) return { ...base, url: '', online: false, processRunning: false, tools: [], flags: [], error: 'MCP_URL not configured', latencyMs: 0 }
-        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
-        const status = await checkServer(url, headers)
-        return { ...base, url, processRunning: true, ...status }
-      }
-
-      const url    = `http://127.0.0.1:${port}/mcp`
-      const status = await checkServer(url, {})
-      return { ...base, url, processRunning: isRunning(instanceId), ...status }
     })
   )
 

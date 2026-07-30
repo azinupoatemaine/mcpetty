@@ -14,3 +14,63 @@ Better approach to investigate:
   are installed/uninstalled. Uptime Kuma has an undocumented but stable REST API + socket.io API.
   Credential needed: Uptime Kuma URL + username/password or API key.
   This would make monitoring fully automatic — install a Portainer instance, monitor appears.
+
+
+Progressive disclosure of the action schema
+-------------------------------------------
+The tool schema is re-sent on EVERY request in a conversation, not once per session, and
+per INSTANCE, not per type — two Proxmox instances pay for it twice. Prompt caching makes
+it ~6x cheaper (cache reads are ~0.1x input) but does NOT make it smaller: it occupies the
+context window on every request regardless.
+
+Measured cost of what buildPlatformTool() emits today, all 7 native types, one instance
+each (same length/4 heuristic logSchemaTokens uses):
+
+  platform      actions   schema tokens
+  wazuh              57           3,136
+  firefly            28           2,492
+  proxmox            38           2,449
+  portainer          39           1,889
+  wikijs             18             916
+  karakeep           11             896
+  mcpetty             6             550
+  ALL               197          12,328
+
+Split by component (sums to 11,217; the rest is JSON scaffolding, nocache, platform
+descriptions, and the get_page/check_approval lines):
+
+  action name enum (all 197)      971 tokens   <- keeps actions CALLABLE
+  typed arg properties (union)  2,783 tokens   <- keeps actions CALLABLE
+  per-action description lines  7,463 tokens   <- just documentation
+
+So 67% of the cost is documentation. Reachability costs only 3,754 tokens.
+
+THE IDEA: defer descriptions, never disable actions.
+- Every action stays in the `action` enum -> always callable, nothing to re-enable.
+- Every arg keeps its typed property + description -> satisfies the CLAUDE.md schema rule,
+  and the model already knows what agent_id/vmid expect, so cold actions are often callable
+  with no lookup at all.
+- Only description lines are deferred: full text for actions actually used, plus a
+  `describe_action(name)` meta-action for the rest.
+- 12,328 -> roughly 5,000 with zero loss of capability.
+
+WHY NOT the obvious "dead tool reaper" (disable actions never called in 30 days):
+it's self-fulfilling. A disabled action can never be called, so it never accrues usage, so
+it stays disabled forever — and the agent doesn't know it's missing, it just quietly can't
+do the thing. tool_call_log should RANK what stays documented, not act as a kill list.
+
+Tunable middle tier worth measuring: keep a one-line description for cold actions and drop
+only the `[args: ...]` signature block. Lands somewhere between 3,754 and 11,217.
+
+For actions genuinely disabled on purpose (destructive ones on a read-only key), two things
+keep it non-silent:
+- One line in the tool description: "12 actions are disabled on this instance." The agent
+  then reports the gap instead of inventing a workaround.
+- A `request_action(name, reason)` meta-action filing into the EXISTING approval queue ->
+  human approves in the dashboard -> filter flips -> notifications/tools/list_changed ->
+  client re-lists. Reuses approvals + tool filters + sse-bus + list_changed.
+
+CAUTION: tools render at position 0 of the API request, so any change to the tool set
+invalidates the ENTIRE prompt cache, not just the tools portion. That makes list_changed
+right for a deliberate human-approved unlock and wrong for anything automatic — which is
+why health flips call invalidatePlatformProbe() WITHOUT broadcasting list_changed.

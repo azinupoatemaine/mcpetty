@@ -150,6 +150,17 @@ function api<T>(base: string, token: string, path: string, init?: RequestInit): 
   return restFetch<T>(base, path, token, undefined, undefined, init)
 }
 
+// IDs reaching this handler are model-supplied. Unescaped they are path, not data:
+// "../../admin/users" normalises straight out of the /api/v1 prefix and reaches arbitrary
+// endpoints with the API key attached.
+function seg(value: unknown, name: string): string {
+  const s = String(value ?? '').trim()
+  if (!s) throw new Error(`Missing ${name}`)
+  if (s.includes('/') || s.includes('\\') || s.includes('..') || s.includes('\0'))
+    throw new Error(`Invalid ${name}: "${s}" — path separators not allowed`)
+  return encodeURIComponent(s)
+}
+
 // ─── Ping ─────────────────────────────────────────────────────────────────────
 
 export async function ping(instanceId: string): Promise<{ ok: boolean; error?: string }> {
@@ -176,7 +187,7 @@ export async function call(instanceId: string, toolName: string, args: Record<st
     }
 
     case 'get_bookmark':
-      return api(base, token, `/bookmarks/${args.bookmarkId}?includeContent=false`)
+      return api(base, token, `/bookmarks/${seg(args.bookmarkId, 'bookmarkId')}?includeContent=false`)
 
     case 'create_bookmark': {
       const body = args.type === 'link'
@@ -187,12 +198,13 @@ export async function call(instanceId: string, toolName: string, args: Record<st
 
     case 'update_bookmark': {
       const { bookmarkId, ...fields } = args
-      await api(base, token, `/bookmarks/${bookmarkId}`, { method: 'PATCH', body: JSON.stringify(fields) })
-      return api(base, token, `/bookmarks/${bookmarkId}?includeContent=false`)
+      const bid = seg(bookmarkId, 'bookmarkId')
+      await api(base, token, `/bookmarks/${bid}`, { method: 'PATCH', body: JSON.stringify(fields) })
+      return api(base, token, `/bookmarks/${bid}?includeContent=false`)
     }
 
     case 'get_bookmark_content': {
-      const data = await api<{ content: Record<string, unknown> }>(base, token, `/bookmarks/${args.bookmarkId}?includeContent=true`)
+      const data = await api<{ content: Record<string, unknown> }>(base, token, `/bookmarks/${seg(args.bookmarkId, 'bookmarkId')}?includeContent=true`)
       const c = data.content
       if (c.type === 'link')  return { type: 'link',  content: c.htmlContent }
       if (c.type === 'text')  return { type: 'text',  content: c.text }
@@ -210,19 +222,19 @@ export async function call(instanceId: string, toolName: string, args: Record<st
       })
 
     case 'add_bookmark_to_list':
-      return api(base, token, `/lists/${args.listId}/bookmarks/${args.bookmarkId}`, { method: 'PUT' })
+      return api(base, token, `/lists/${seg(args.listId, 'listId')}/bookmarks/${seg(args.bookmarkId, 'bookmarkId')}`, { method: 'PUT' })
 
     case 'remove_bookmark_from_list':
-      return api(base, token, `/lists/${args.listId}/bookmarks/${args.bookmarkId}`, { method: 'DELETE' })
+      return api(base, token, `/lists/${seg(args.listId, 'listId')}/bookmarks/${seg(args.bookmarkId, 'bookmarkId')}`, { method: 'DELETE' })
 
     case 'attach_tags':
-      return api(base, token, `/bookmarks/${args.bookmarkId}/tags`, {
+      return api(base, token, `/bookmarks/${seg(args.bookmarkId, 'bookmarkId')}/tags`, {
         method: 'POST',
         body: JSON.stringify({ tags: (args.tagsToAttach as string[]).map((t) => ({ tagName: t })) }),
       })
 
     case 'detach_tags':
-      return api(base, token, `/bookmarks/${args.bookmarkId}/tags`, {
+      return api(base, token, `/bookmarks/${seg(args.bookmarkId, 'bookmarkId')}/tags`, {
         method: 'DELETE',
         body: JSON.stringify({ tags: (args.tagsToDetach as string[]).map((t) => ({ tagName: t })) }),
       })

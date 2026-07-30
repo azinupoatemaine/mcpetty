@@ -42,7 +42,11 @@ Self-hosted MCP dashboard. One Docker container. MCPs run as native handlers. Al
 
 **Credential encryption** — AES-256-GCM. Per-credential key via `hkdfSync('sha256', masterKey, SALT, "mcpetty:{instanceId}:{credKey}", 32)`. Key zeroed after use.
 
-**Gateway API key** — `hkdfSync('sha256', masterKey, SALT, "mcpetty-gateway-v1", 32)` as base64url. Stable across restarts. Never stored. Changes only if data volume is wiped.
+**Master gateway key** — random 32 bytes, **sealed** (AES-256-GCM under the master secret) into `settings.master_gateway_key_sealed`, decrypted once and cached in memory. Rotatable from Settings. A pre-existing plaintext `master_gateway_key` row is migrated in place on first read — same key value, so clients keep working. Compared with `secretEquals()` (constant time), never `===`.
+
+**Approver key** — `settings.approver_key_sealed`, same sealing. Authorises `POST /api/approvals/<id>` from an external workflow. **Gateway and namespace keys are not accepted there** — they are handed to the MCP client, so accepting one would let an agent approve the request its own call raised.
+
+**Sealed settings helpers** — `sealSecret(plaintext, label)` / `openSecret(blob, label)` in `crypto.ts`. For secrets that must stay readable (the dashboard displays them) but must not sit in the DB as plaintext. Credentials still use `encrypt`/`decrypt` directly.
 
 ---
 
@@ -328,8 +332,31 @@ MCPetty targets self-hosted deployments, which frequently have no valid TLS cert
 - `sameSite: 'strict'` on session cookie.
 - `DELETE /mcp` requires valid Bearer token.
 - `docker_proxy` and `kubernetes_proxy` in portainer.ts: method restricted to GET/POST/PUT/DELETE, body validated as JSON.
-- Webhook test endpoint blocks loopback (127.x, localhost, ::1) and link-local (169.254.x). RFC1918 is allowed — self-hosted deployments legitimately target private-network services.
+- Webhook URL validation lives in `src/lib/webhook-url.ts` (`webhookUrlError()`) and runs on **save** (`/api/settings`) as well as in the test endpoint. Blocks loopback, `0.0.0.0`, link-local (169.254.x, fe80::) and non-http(s) schemes. RFC1918 is allowed — self-hosted deployments legitimately target private-network services.
 - Gateway ID in LIKE queries escaped with `ESCAPE '\\'` via `escapeLike()` in db.ts.
+- **Approvals cannot be self-approved.** `/api/approvals/<id>` accepts a dashboard session or the dedicated approver key only. Approvals expire after `APPROVAL_TTL_MS` (1h) if never redeemed, and `check_approval` re-checks the *stored* action against the caller's scope before executing it.
+- **Page tokens are bound to `{platform, scopeId}`.** A `get_page` token minted in one namespace cannot be redeemed in another; a mismatch returns the same message as an expired token.
+- **Tool results are redacted before they are persisted or sent.** `redactResultText()` applies the same key list to results that `redact()` applies to args, covering both `tool_call_log.result_json` and the webhook `result_preview`.
+- Injection scanning runs on the **full** result before pagination slices it, and again on each `get_page` page.
+- Rate limiting runs **before** the cache lookup — a cache hit is still a call.
+- Login lockout is per-username as well as per-IP. The IP bucket keys on `x-forwarded-for`, which a direct client can forge; the account bucket is what actually bounds a password guess.
+- Subprocess MCPs get a whitelisted env (`ENV_PASSTHROUGH` in process-manager.ts), never `{...process.env}` — that used to hand every third-party binary `MCPETTY_SECRET` and `DATA_DIR`.
+- `listTools()` caps at `MAX_TOOL_PAGES` (50) and bails on a repeated cursor, in both `mcp-client.ts` and `stdio-bridge.ts`. `http-proxy` points at a user-supplied URL, so the far end is not trusted to terminate its own pagination.
+- Every native handler sanitises model-supplied URL segments: `seg()` in karakeep/firefly, `safeSeg()` in proxmox/wazuh, `Number()` in portainer.
+
+**Known, deliberately unchanged:** `NODE_TLS_REJECT_UNAUTHORIZED = '0'` is still global (see the HTTP/TLS constraint above). It disables certificate verification for *all* outbound requests, including webhooks to public hosts. Scoping it to private hosts needs a per-request undici `Agent`; the `isPrivateHost` / `fetchInsecure` machinery in `native/http.ts` is the vestige of the old per-request approach and is currently inert.
+
+---
+
+## tools/list health behaviour
+
+`collectPlatforms()` no longer probes every instance on every call:
+
+- Probes are cached per instance for `PROBE_TTL_MS` (60s) in `probeCache`. `invalidatePlatformProbe(instanceId?)` clears it — called on install, uninstall, credential change, and health status flips.
+- A fresh health record (interval > 0 and checked within 2 intervals) is trusted instead of probing. Stale records are ignored and a probe runs.
+- Native tool lists are static TypeScript, so a failed ping costs liveness but never the action list.
+- **An unreachable platform is listed with an `[OFFLINE — <error>]` description prefix, not dropped.** Silently vanishing made the agent lose a capability mid-session with no way to distinguish "gone" from "broken". A platform is omitted only when no action list is known at all (a remote that has never listed successfully) — an empty `action` enum would be an invalid schema.
+- `installed_mcps.enabled` is now honoured on the `tools/call` path. Health auto-disable sets it to 0; before this it was written and never read, so auto-disabled instances still accepted calls and burned the full 30s native timeout on each.
 
 ---
 
@@ -347,12 +374,34 @@ MCPetty targets self-hosted deployments, which frequently have no valid TLS cert
 
 ---
 
+## Installing an arbitrary MCP — the `custom` catalog entry
+
+Any Streamable HTTP MCP server can be installed without writing a handler: catalog entry
+`custom` (`http-proxy` transport, `MCP_URL` + optional `MCP_TOKEN`). It inherits tool
+filters, approvals, namespaces, response caching and telemetry. Reach for this before
+writing a native handler; write the handler when you want typed args and curated
+descriptions rather than whatever the upstream server advertises.
+
+**Test before install** — `POST /api/library/test { type, credentials, instanceId? }`
+writes credentials under a throwaway `__test_<random>` instance, probes (native `ping()`
+or a real `initSession` + `listTools` for http-proxy), and deletes them in a `finally`.
+With `instanceId` set, blank fields fall back to the stored credential, so you can verify
+one rotated field without re-typing the rest.
+
+---
+
 ## MCP roadmap — next to build
 
 Candidate native handlers to build next:
 
-1. **Firefly III** — Personal finance REST API. Credential: `FIREFLY_URL` + `FIREFLY_TOKEN` (Personal Access Token from profile).
-2. **Paperless-NGX** — Document management. REST API at `/api/`. Key tools: search documents, get content/metadata, list tags/correspondents/document types.
-3. **n8n** — Workflow automation. API: list workflows, get executions, trigger via webhook or API. Credential: `N8N_URL` + `N8N_API_KEY`.
-4. **Jellyfin** — Media server. REST API: search library, get items, manage users, trigger scans. Credential: `JELLYFIN_URL` + `JELLYFIN_TOKEN` (API key from dashboard).
-5. **Ollama** — Local LLM. API: list models, generate, pull models. Credential: `OLLAMA_URL` (no auth by default).
+1. **Paperless-NGX** — Document management. REST API at `/api/`. Key tools: search documents, get content/metadata, list tags/correspondents/document types.
+2. ***arr suite** (Sonarr/Radarr/Prowlarr/Lidarr) — near-identical `/api/v3` + `X-Api-Key` APIs, so one parameterized handler covers four services. Best value-per-line on the list.
+3. **Immich** — Photos. `/api/`, `x-api-key`. CLIP/smart search is a strong agent surface.
+4. **Gitea / Forgejo** — `/api/v1`, token. Issues, PRs, repos.
+5. **Jellyfin** — Media server. REST API: search library, get items, manage users, trigger scans. Credential: `JELLYFIN_URL` + `JELLYFIN_TOKEN` (API key from dashboard).
+6. **Ollama** — Local LLM. API: list models, generate, pull models. Credential: `OLLAMA_URL` (no auth by default).
+
+Explicitly **not** building: Vaultwarden/Bitwarden. A credential-exfiltration surface wired
+to an LLM, inside a product whose whole job is holding credentials.
+
+Firefly III and n8n are already shipped (`native/firefly.ts`; n8n as an `http-proxy` catalog entry).

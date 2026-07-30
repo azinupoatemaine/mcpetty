@@ -55,17 +55,35 @@ function SaveBtn({ saving, saved, onClick }: { saving: boolean; saved: boolean; 
 function useSave() {
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
-  async function save(body: object) {
-    setSaving(true)
+  const [error,  setError]  = useState('')
+  // Returns whether the save actually landed. The server rejects some settings (an
+  // invalid webhook URL, for one), and flashing "✓ saved" over a 400 would tell the
+  // operator their config is live when it was never written.
+  async function save(body: object): Promise<boolean> {
+    setSaving(true); setError('')
     try {
-      await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string }
+        setError(d.error ?? `Save failed (HTTP ${res.status})`)
+        return false
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+      return false
     } finally {
       setSaving(false)
     }
   }
-  return { saving, saved, save }
+  return { saving, saved, error, save }
+}
+
+function SaveError({ error }: { error: string }) {
+  if (!error) return null
+  return <div style={{ color: S.red, fontSize: 11, marginTop: 6 }}>{error}</div>
 }
 
 // ─── Master gateway section ───────────────────────────────────────────────────
@@ -206,6 +224,211 @@ function MasterGatewaySection({ raw }: { raw: Record<string, string> }) {
   )
 }
 
+// ─── Prompts section ──────────────────────────────────────────────────────────
+// MCP prompts: named, parameterised templates the client surfaces as slash commands.
+// They cost nothing in the per-request tool schema — clients fetch them on demand.
+
+interface PromptArgument { name: string; description: string; required: boolean }
+interface PromptRecord {
+  id: string; namespaceId: string | null; name: string
+  description: string; arguments: PromptArgument[]; template: string
+}
+
+const BLANK_PROMPT: PromptRecord = { id: '', namespaceId: null, name: '', description: '', arguments: [], template: '' }
+
+// Arguments are declared by writing {{name}} in the template, so the two can never drift
+// apart — no second list to keep in sync, and the API rejects a declared-but-unused arg.
+function argsFromTemplate(template: string, existing: PromptArgument[]): PromptArgument[] {
+  const found = [...template.matchAll(/\{\{\s*([A-Za-z0-9_-]+)\s*\}\}/g)].map((m) => m[1])
+  const seen  = new Set<string>()
+  return found.filter((n) => (seen.has(n) ? false : seen.add(n))).map((name) =>
+    existing.find((a) => a.name === name) ?? { name, description: '', required: true }
+  )
+}
+
+function PromptEditor({ initial, namespaces, onSaved, onCancel }: {
+  initial:    PromptRecord
+  namespaces: Array<{ id: string; name: string }>
+  onSaved:    () => void
+  onCancel:   () => void
+}) {
+  const [name,     setName]     = useState(initial.name)
+  const [desc,     setDesc]     = useState(initial.description)
+  const [template, setTemplate] = useState(initial.template)
+  const [nsId,     setNsId]     = useState(initial.namespaceId ?? '')
+  const [args,     setArgs]     = useState<PromptArgument[]>(initial.arguments)
+  const [saving,   setSaving]   = useState(false)
+  const [error,    setError]    = useState('')
+
+  const detected = argsFromTemplate(template, args)
+
+  async function save() {
+    setSaving(true); setError('')
+    const res = await fetch('/api/prompts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: initial.id || undefined,
+        namespaceId: nsId || null,
+        name: name.trim(), description: desc.trim(),
+        arguments: detected, template,
+      }),
+    })
+    const data = await res.json() as { error?: string }
+    setSaving(false)
+    if (data.error) { setError(data.error); return }
+    setArgs([]); onSaved()
+  }
+
+  return (
+    <div style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 6, padding: 14, marginTop: 12 }}>
+      {error && <div style={{ color: S.red, fontSize: 12, marginBottom: 10 }}>{error}</div>}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ color: S.muted, fontSize: 11, marginBottom: 5 }}>Name <span style={{ color: S.red }}>*</span> <span style={{ color: S.dim }}>— becomes the slash command</span></div>
+          <input
+            type="text" value={name} placeholder="diagnose-stack"
+            onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
+            className="input" style={{ width: '100%', padding: '6px 10px', fontSize: 13, color: S.green, boxSizing: 'border-box' as const }}
+          />
+        </div>
+        <div>
+          <div style={{ color: S.muted, fontSize: 11, marginBottom: 5 }}>Scope</div>
+          <select value={nsId} onChange={(e) => setNsId(e.target.value)} className="input" style={{ width: '100%', padding: '6px 10px', fontSize: 13, boxSizing: 'border-box' as const }}>
+            <option value="">All scopes (global)</option>
+            {namespaces.map((ns) => <option key={ns.id} value={ns.id}>{ns.name} (/mcp/{ns.id})</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ color: S.muted, fontSize: 11, marginBottom: 5 }}>Description <span style={{ color: S.dim }}>— shown in the client&apos;s command list</span></div>
+        <input
+          type="text" value={desc} placeholder="Check a Portainer stack and report what is unhealthy"
+          onChange={(e) => setDesc(e.target.value)}
+          className="input" style={{ width: '100%', padding: '6px 10px', fontSize: 13, boxSizing: 'border-box' as const }}
+        />
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ color: S.muted, fontSize: 11, marginBottom: 5 }}>
+          Template <span style={{ color: S.red }}>*</span>{' '}
+          <span style={{ color: S.dim }}>— write <code style={{ color: S.green }}>{'{{argument}}'}</code> anywhere to declare an argument</span>
+        </div>
+        <textarea
+          value={template} rows={7}
+          onChange={(e) => setTemplate(e.target.value)}
+          placeholder={'Check the {{stack}} stack on portainer-prod.\n\nList its containers, flag any that are unhealthy or restarting,\nand pull the last 50 log lines for each problem container.'}
+          className="input"
+          style={{ width: '100%', padding: '8px 10px', fontSize: 12, resize: 'vertical' as const, color: S.muted, boxSizing: 'border-box' as const, lineHeight: 1.6 }}
+        />
+      </div>
+
+      {detected.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ color: S.dim, fontSize: 10, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+            Arguments detected in template
+          </div>
+          {detected.map((a, i) => (
+            <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+              <code style={{ color: S.green, fontSize: 11, width: 130, flexShrink: 0 }}>{a.name}</code>
+              <input
+                type="text" value={a.description} placeholder="what this argument is for"
+                onChange={(e) => {
+                  const next = [...detected]; next[i] = { ...a, description: e.target.value }; setArgs(next)
+                }}
+                className="input" style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, color: S.dim, fontSize: 11, cursor: 'pointer', flexShrink: 0 }}>
+                <input
+                  type="checkbox" checked={a.required}
+                  onChange={(e) => { const next = [...detected]; next[i] = { ...a, required: e.target.checked }; setArgs(next) }}
+                />
+                required
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={save} disabled={saving} className="btn-primary" style={{ padding: '6px 18px', fontSize: 12 }}>
+          {saving ? 'saving...' : initial.id ? 'update prompt' : 'create prompt'}
+        </button>
+        <button onClick={onCancel} className="btn" style={{ padding: '6px 12px', fontSize: 12 }}>cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function PromptsSection() {
+  const [prompts,    setPrompts]    = useState<PromptRecord[]>([])
+  const [namespaces, setNamespaces] = useState<Array<{ id: string; name: string }>>([])
+  const [editing,    setEditing]    = useState<PromptRecord | null>(null)
+
+  const load = useCallback(async () => {
+    const [p, ns] = await Promise.all([
+      fetch('/api/prompts').then((r) => r.json()).catch(() => []),
+      fetch('/api/namespaces').then((r) => r.json()).catch(() => []),
+    ])
+    setPrompts(Array.isArray(p) ? p : [])
+    setNamespaces(Array.isArray(ns) ? ns.map((n: { id: string; name: string }) => ({ id: n.id, name: n.name })) : [])
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function remove(p: PromptRecord) {
+    if (!confirm(`Delete prompt "${p.name}"?`)) return
+    await fetch(`/api/prompts?id=${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+    load()
+  }
+
+  return (
+    <Section title="Prompts" sub="Named templates your agent gets as slash commands. Unlike tools they cost zero schema tokens — clients fetch them on demand.">
+      {prompts.length === 0 && !editing && (
+        <div style={{ color: S.dim, fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+          No prompts yet. A prompt turns a runbook you retype every week into one keystroke —
+          <code style={{ color: S.green, marginLeft: 4 }}>/mcpetty:diagnose-stack</code>.
+        </div>
+      )}
+
+      {prompts.map((p) => (
+        <div key={p.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 0', borderTop: `1px solid ${S.border}` }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <code style={{ color: S.green, fontSize: 12, fontWeight: 'bold' }}>/{p.name}</code>
+            <span style={{ color: S.dim, fontSize: 10, marginLeft: 8 }}>
+              {p.namespaceId ? `/mcp/${p.namespaceId}` : 'all scopes'}
+            </span>
+            {p.arguments.length > 0 && (
+              <span style={{ color: S.dim2, fontSize: 10, marginLeft: 8 }}>
+                {p.arguments.map((a) => `${a.name}${a.required ? '*' : ''}`).join(', ')}
+              </span>
+            )}
+            {p.description && <div style={{ color: S.muted, fontSize: 11, marginTop: 3, lineHeight: 1.4 }}>{p.description}</div>}
+          </div>
+          <button onClick={() => setEditing(p)} className="btn" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}>edit</button>
+          <button onClick={() => remove(p)} className="btn-danger" style={{ fontSize: 10, padding: '2px 8px', flexShrink: 0 }}>delete</button>
+        </div>
+      ))}
+
+      {editing ? (
+        <PromptEditor
+          key={editing.id || 'new'}
+          initial={editing}
+          namespaces={namespaces}
+          onSaved={() => { setEditing(null); load() }}
+          onCancel={() => setEditing(null)}
+        />
+      ) : (
+        <button onClick={() => setEditing(BLANK_PROMPT)} className="btn" style={{ marginTop: 12, fontSize: 12, padding: '5px 14px' }}>
+          + new prompt
+        </button>
+      )}
+    </Section>
+  )
+}
+
 // ─── Injection detection section ──────────────────────────────────────────────
 
 function InjectionSection({ raw }: { raw: Record<string, string> }) {
@@ -255,7 +478,7 @@ function WebhookSection({ raw }: { raw: Record<string, string> }) {
   const [on,       setOn]       = useState(bool(raw.webhook_enabled))
   const [url,      setUrl]      = useState(raw.webhook_url ?? '')
   const [triggers, setTriggers] = useState(arr(raw.webhook_triggers).join('\n'))
-  const { saving, saved, save } = useSave()
+  const { saving, saved, error, save } = useSave()
   const [testing, setTesting]   = useState(false)
   const [testMsg, setTestMsg]   = useState('')
 
@@ -321,7 +544,59 @@ function WebhookSection({ raw }: { raw: Record<string, string> }) {
         webhook_url:      url.trim(),
         webhook_triggers: JSON.stringify(triggers.split('\n').map((s) => s.trim()).filter(Boolean)),
       }})} />
+      <SaveError error={error} />
+
+      <ApproverKeyBlock />
     </Section>
+  )
+}
+
+// ─── Approver key ─────────────────────────────────────────────────────────────
+// Lives inside the webhook section because that is the only thing that needs it: an
+// external workflow calling POST /api/approvals/<id> to decide a pending approval.
+// Deliberately separate from any gateway key — see the comment in that route.
+
+function ApproverKeyBlock() {
+  const [key,      setKey]      = useState('')
+  const [copied,   setCopied]   = useState(false)
+  const [rotating, setRotating] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/approver-key').then((r) => r.json()).then((d: { key?: string }) => setKey(d.key ?? ''))
+  }, [])
+
+  async function rotate() {
+    if (!confirm('Rotate approver key? Any workflow using the old key will stop being able to approve.')) return
+    setRotating(true)
+    const d = await fetch('/api/approver-key', { method: 'POST' }).then((r) => r.json()) as { key?: string }
+    setKey(d.key ?? '')
+    setRotating(false)
+  }
+
+  const masked = key ? `${key.slice(0, 8)}${'•'.repeat(20)}` : '...'
+
+  return (
+    <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${S.border}` }}>
+      <div style={{ color: S.dim, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Approver Key</div>
+      <div style={{ color: S.dim2, fontSize: 11, lineHeight: 1.6, marginBottom: 8 }}>
+        Send as <code style={{ color: S.green }}>Authorization: Bearer &lt;key&gt;</code> when your workflow POSTs to{' '}
+        <code style={{ color: S.green }}>/api/approvals/&lt;approval_id&gt;</code> with <code style={{ color: S.green }}>{'{"decision":"approved"}'}</code>.
+        Gateway keys are <strong>not</strong> accepted here — an agent holding one could otherwise approve its own request.
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: S.bg, border: `1px solid ${S.border}`, borderRadius: 4, padding: '6px 10px' }}>
+        <code style={{ color: S.muted, fontSize: 11, flex: 1, fontFamily: 'monospace', letterSpacing: 1 }}>{masked}</code>
+        <button
+          onClick={() => { copyText(key); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+          className="btn"
+          style={{ color: copied ? S.green : undefined, fontSize: 10, padding: '2px 8px' }}
+        >
+          {copied ? '✓ copied' : 'copy key'}
+        </button>
+        <button onClick={rotate} disabled={rotating} className="btn-danger" style={{ fontSize: 10, padding: '2px 8px' }}>
+          {rotating ? '...' : 'rotate'}
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -687,6 +962,7 @@ export default function SettingsClient() {
       ) : (
         <>
           <MasterGatewaySection raw={data.settings} />
+          <PromptsSection />
           <MetaMCPSection />
           <ChangePasswordSection />
           <AllowedOriginsSection raw={data.settings} />

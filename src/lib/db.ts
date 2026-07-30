@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { randomBytes, createHmac } from 'crypto'
-import { encrypt, decrypt, validateSecret, getSecret } from './crypto'
+import { encrypt, decrypt, validateSecret, getSecret, sealSecret, openSecret } from './crypto'
 import { currentActor, type ActorType } from './audit'
 
 const DATA_DIR = process.env.DATA_DIR || '/app/data'
@@ -211,6 +211,22 @@ function db(): Database.Database {
       config_json  TEXT NOT NULL,
       PRIMARY KEY (namespace_id, type)
     );
+
+    CREATE TABLE IF NOT EXISTS prompts (
+      id             TEXT    PRIMARY KEY,
+      namespace_id   TEXT,
+      name           TEXT    NOT NULL,
+      description    TEXT    NOT NULL DEFAULT '',
+      arguments_json TEXT    NOT NULL DEFAULT '[]',
+      template       TEXT    NOT NULL,
+      created_at     INTEGER NOT NULL,
+      updated_at     INTEGER NOT NULL
+    );
+
+    -- namespace_id NULL means "every scope", so the uniqueness key has to collapse NULL to
+    -- a real value or SQLite would treat every global prompt as distinct from every other.
+    CREATE UNIQUE INDEX IF NOT EXISTS prompts_scope_name
+      ON prompts(COALESCE(namespace_id, ''), name);
 
     CREATE TABLE IF NOT EXISTS immutable_audit_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1005,18 +1021,65 @@ export function setSetting(key: string, value: string): void {
   logChange('setting', key)
 }
 
-export function getMasterGatewayKey(): string {
-  const stored = getSetting('master_gateway_key')
-  if (stored) return stored
-  const key = randomBytes(32).toString('base64url')
-  db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('master_gateway_key', key)
+// Gateway keys have to stay readable — the dashboard displays them so you can copy the
+// connect command — so they are sealed (AES-256-GCM under the master secret) rather than
+// hashed. A stolen DB file alone no longer yields working keys. Decrypted once and cached,
+// because getMasterGatewayKey() runs on every single /mcp request.
+
+const _keyCache = new Map<string, string>()
+
+function readSealedKey(setting: string, legacySetting: string, label: string): string {
+  const cached = _keyCache.get(setting)
+  if (cached) return cached
+
+  const sealed = getSetting(setting)
+  if (sealed) {
+    const key = openSecret(sealed, label)
+    _keyCache.set(setting, key)
+    return key
+  }
+
+  // Migrate a pre-existing plaintext key in place — same key value, so every client
+  // configured with it keeps working; it just stops being readable in the raw DB.
+  const legacy = getSetting(legacySetting)
+  if (legacy) {
+    db().transaction(() => {
+      db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(setting, sealSecret(legacy, label))
+      db().prepare('DELETE FROM settings WHERE key = ?').run(legacySetting)
+    })()
+    _keyCache.set(setting, legacy)
+    return legacy
+  }
+
+  return writeSealedKey(setting, label, randomBytes(32).toString('base64url'))
+}
+
+function writeSealedKey(setting: string, label: string, key: string): string {
+  db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(setting, sealSecret(key, label))
+  _keyCache.set(setting, key)
   return key
 }
 
+export function getMasterGatewayKey(): string {
+  return readSealedKey('master_gateway_key_sealed', 'master_gateway_key', 'master_gateway_key')
+}
+
 export function rotateMasterGatewayKey(): string {
-  const key = randomBytes(32).toString('base64url')
-  db().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('master_gateway_key', key)
+  const key = writeSealedKey('master_gateway_key_sealed', 'master_gateway_key', randomBytes(32).toString('base64url'))
   logChange('gateway_key_rotate', 'master')
+  return key
+}
+
+// Deliberately NOT any gateway key. The approver key authorises *deciding* approvals from
+// an external system (Slack/n8n callback). Accepting a gateway key here would let the very
+// agent an approval rule exists to gate approve its own pending request.
+export function getApproverKey(): string {
+  return readSealedKey('approver_key_sealed', '', 'approver_key')
+}
+
+export function rotateApproverKey(): string {
+  const key = writeSealedKey('approver_key_sealed', 'approver_key', randomBytes(32).toString('base64url'))
+  logChange('approver_key_rotate', 'approver')
   return key
 }
 
@@ -1153,6 +1216,15 @@ export interface ApprovalRequest {
 
 function mapApprovalRow(r: { id: string; instance_id: string; action: string; args_json: string; status: string; created_at: number; decided_at: number | null; decision_by: string | null; reject_reason: string | null; result_json: string | null }): ApprovalRequest {
   return { id: r.id, instanceId: r.instance_id, action: r.action, argsJson: r.args_json, status: r.status as ApprovalRequest['status'], createdAt: r.created_at, decidedAt: r.decided_at, decisionBy: r.decision_by, rejectReason: r.reject_reason, resultJson: r.result_json }
+}
+
+// An approval that is granted but never polled must not stay executable forever — the
+// operator approved an action in a context that expires with the conversation.
+export const APPROVAL_TTL_MS = 60 * 60 * 1000  // 1 hour
+
+export function isApprovalExpired(a: ApprovalRequest): boolean {
+  if (a.resultJson) return false  // already executed; the stored result stays readable
+  return Date.now() - a.createdAt > APPROVAL_TTL_MS
 }
 
 export function createApprovalRequest(instanceId: string, action: string, argsJson: string, approvalId: string): void {
@@ -1356,6 +1428,103 @@ export function getLatestSchemaTokenBreakdown(gatewayId: string | null): SchemaT
     ? (db().prepare('SELECT timestamp, gateway_id, total_tokens, breakdown_json FROM schema_token_log WHERE gateway_id IS NULL ORDER BY timestamp DESC LIMIT 1').get() as { timestamp: number; gateway_id: string | null; total_tokens: number; breakdown_json: string } | undefined)
     : (db().prepare('SELECT timestamp, gateway_id, total_tokens, breakdown_json FROM schema_token_log WHERE gateway_id = ? ORDER BY timestamp DESC LIMIT 1').get(gatewayId) as { timestamp: number; gateway_id: string | null; total_tokens: number; breakdown_json: string } | undefined)
   return r ? { timestamp: r.timestamp, gatewayId: r.gateway_id, totalTokens: r.total_tokens, breakdownJson: r.breakdown_json } : null
+}
+
+// ─── Prompts (MCP prompts/list + prompts/get) ─────────────────────────────────
+//
+// A prompt is a named, parameterised message template the server offers and the client
+// surfaces — in Claude Code they appear as slash commands. Unlike tools they cost nothing
+// in the per-request schema: clients fetch them on demand.
+//
+// namespace_id NULL = visible in every scope, including the master gateway. A non-null
+// namespace_id scopes the prompt to that namespace only, so a prompt written for one
+// namespace never leaks into another.
+
+export interface PromptArgument {
+  name:        string
+  description: string
+  required:    boolean
+}
+
+export interface PromptRecord {
+  id:          string
+  namespaceId: string | null
+  name:        string
+  description: string
+  arguments:   PromptArgument[]
+  template:    string
+  createdAt:   number
+  updatedAt:   number
+}
+
+type PromptRow = { id: string; namespace_id: string | null; name: string; description: string; arguments_json: string; template: string; created_at: number; updated_at: number }
+
+function mapPromptRow(r: PromptRow): PromptRecord {
+  let args: PromptArgument[] = []
+  try {
+    const parsed = JSON.parse(r.arguments_json)
+    if (Array.isArray(parsed)) args = parsed
+  } catch { /* malformed arg spec degrades to no arguments, never breaks prompts/list */ }
+  return {
+    id: r.id, namespaceId: r.namespace_id, name: r.name, description: r.description,
+    arguments: args, template: r.template, createdAt: r.created_at, updatedAt: r.updated_at,
+  }
+}
+
+const PROMPT_COLS = 'id, namespace_id, name, description, arguments_json, template, created_at, updated_at'
+
+// Every prompt an admin can manage, regardless of scope.
+export function listAllPrompts(): PromptRecord[] {
+  return (db().prepare(`SELECT ${PROMPT_COLS} FROM prompts ORDER BY COALESCE(namespace_id, ''), name`).all() as PromptRow[]).map(mapPromptRow)
+}
+
+// What a given scope can see: global prompts plus that namespace's own.
+export function listPromptsForScope(namespaceId: string | null): PromptRecord[] {
+  const rows = namespaceId === null
+    ? db().prepare(`SELECT ${PROMPT_COLS} FROM prompts WHERE namespace_id IS NULL ORDER BY name`).all()
+    : db().prepare(`SELECT ${PROMPT_COLS} FROM prompts WHERE namespace_id IS NULL OR namespace_id = ? ORDER BY name`).all(namespaceId)
+  return (rows as PromptRow[]).map(mapPromptRow)
+}
+
+// Namespace-specific wins over a global prompt of the same name, so a namespace can
+// override a shared runbook without renaming it.
+export function getPromptForScope(namespaceId: string | null, name: string): PromptRecord | null {
+  if (namespaceId !== null) {
+    const own = db().prepare(`SELECT ${PROMPT_COLS} FROM prompts WHERE namespace_id = ? AND name = ?`).get(namespaceId, name) as PromptRow | undefined
+    if (own) return mapPromptRow(own)
+  }
+  const global = db().prepare(`SELECT ${PROMPT_COLS} FROM prompts WHERE namespace_id IS NULL AND name = ?`).get(name) as PromptRow | undefined
+  return global ? mapPromptRow(global) : null
+}
+
+export function upsertPrompt(p: {
+  id?:          string
+  namespaceId:  string | null
+  name:         string
+  description:  string
+  arguments:    PromptArgument[]
+  template:     string
+}): PromptRecord {
+  const now = Date.now()
+  const id  = p.id ?? randomBytes(6).toString('hex')
+  db().prepare(`
+    INSERT INTO prompts (id, namespace_id, name, description, arguments_json, template, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      namespace_id   = excluded.namespace_id,
+      name           = excluded.name,
+      description    = excluded.description,
+      arguments_json = excluded.arguments_json,
+      template       = excluded.template,
+      updated_at     = excluded.updated_at
+  `).run(id, p.namespaceId, p.name, p.description, JSON.stringify(p.arguments), p.template, now, now)
+  logChange('prompt_upsert', p.name, p.namespaceId ?? 'global')
+  return { id, namespaceId: p.namespaceId, name: p.name, description: p.description, arguments: p.arguments, template: p.template, createdAt: now, updatedAt: now }
+}
+
+export function deletePrompt(id: string): void {
+  db().prepare('DELETE FROM prompts WHERE id = ?').run(id)
+  logChange('prompt_delete', id)
 }
 
 // ─── Immutable audit log ──────────────────────────────────────────────────────

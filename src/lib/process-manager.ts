@@ -20,12 +20,27 @@ function resolveArgs(instanceId: string, args: string[]): string[] {
   )
 }
 
+// Subprocess MCPs are third-party binaries. Inheriting process.env wholesale handed each
+// of them MCPETTY_SECRET and DATA_DIR — enough to open the DB and decrypt *every other*
+// instance's credentials. A subprocess gets the minimum it needs to run plus its own
+// credentials, nothing else.
+const ENV_PASSTHROUGH = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'NODE_ENV', 'SSL_CERT_FILE', 'SSL_CERT_DIR']
+
+function baseEnv(): NodeJS.ProcessEnv {
+  const env: Record<string, string> = {}
+  for (const k of ENV_PASSTHROUGH) {
+    const v = process.env[k]
+    if (v !== undefined) env[k] = v
+  }
+  return env as NodeJS.ProcessEnv
+}
+
 export function startMCP(instanceId: string, type: string, port: number): void {
   const entry = findCatalogEntry(type)
   if (!entry || entry.transport === 'native' || entry.transport === 'http-proxy') return
   if (running.has(instanceId) || stopping.has(instanceId)) return
 
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const env: NodeJS.ProcessEnv = baseEnv()
   for (const cred of entry.credentials) {
     const value = getCredential(instanceId, cred.key)
     if (value) env[cred.key] = value

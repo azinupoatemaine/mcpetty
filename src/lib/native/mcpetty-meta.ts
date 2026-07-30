@@ -1,5 +1,6 @@
 import { getInstalledMCPs, getInsights, getSessions } from '../db'
 import type { MCPTool } from '../mcp-client'
+import type { CallScope } from './index'
 
 export const TOOLS: MCPTool[] = [
   {
@@ -69,12 +70,17 @@ export async function ping(_instanceId: string): Promise<{ ok: boolean }> {
   return { ok: true }
 }
 
-export async function call(_instanceId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
-  const days = Math.min(Number(args.days ?? 7), 30)
+// This handler reports on MCPetty itself, so every one of its answers is a view across
+// instances — and a namespace-scoped key must not use it to enumerate or observe the
+// instances it was denied. Everything below is filtered to the caller's scope.
+export async function call(_instanceId: string, toolName: string, args: Record<string, unknown>, scope?: CallScope): Promise<unknown> {
+  const days    = Math.min(Number(args.days ?? 7), 30)
+  const allowed = scope?.instanceIds ?? null
+  const visible = (platform: string) => allowed === null || allowed.includes(platform)
 
   switch (toolName) {
     case 'get_status': {
-      const mcps = getInstalledMCPs()
+      const mcps = getInstalledMCPs().filter((m) => visible(m.instanceId))
       const tag  = typeof args.tag === 'string' ? args.tag.trim() : undefined
       const list = tag ? mcps.filter((m) => (m.tags ?? []).includes(tag)) : mcps
       return list.map((m) => ({ instanceId: m.instanceId, type: m.type, name: m.name, enabled: m.enabled, tags: m.tags ?? [] }))
@@ -82,25 +88,28 @@ export async function call(_instanceId: string, toolName: string, args: Record<s
 
     case 'get_insights_summary': {
       const ins = getInsights(days)
-      const successRate = ins.summary.total > 0
-        ? Math.round((ins.summary.successes / ins.summary.total) * 100)
-        : 100
+      const perPlatform = ins.perPlatform.filter((p) => visible(p.platform))
+      // Totals come from perPlatform rather than ins.summary, which is un-scoped.
+      const total     = perPlatform.reduce((n, p) => n + p.total, 0)
+      const errors    = perPlatform.reduce((n, p) => n + p.errors, 0)
+      const successRate = total > 0 ? Math.round(((total - errors) / total) * 100) : 100
       return {
         days,
-        total:       ins.summary.total,
+        total,
         successRate: `${successRate}%`,
         avgLatency:  `${Math.round(ins.summary.avgLatency)}ms`,
         retryRate:   `${ins.summary.retryRate}%`,
-        topPlatforms: ins.perPlatform.slice(0, 5).map((p) => ({ platform: p.platform, calls: p.total, errors: p.errors })),
-        callsPerDay: ins.callsPerDay,
+        topPlatforms: perPlatform.slice(0, 5).map((p) => ({ platform: p.platform, calls: p.total, errors: p.errors })),
+        ...(allowed === null ? { callsPerDay: ins.callsPerDay } : {}),
       }
     }
 
     case 'get_recent_calls': {
       const limit = Math.min(Number(args.limit ?? 20), 100)
-      const platform = typeof args.platform === 'string' ? args.platform : undefined
-      const ins = getInsights(days, platform)
-      return ins.recentCalls.slice(0, limit).map((c) => ({
+      const requested = typeof args.platform === 'string' ? args.platform : undefined
+      if (requested && !visible(requested)) throw new Error(`Platform "${requested}" is not in this namespace`)
+      const ins = getInsights(days, requested)
+      return ins.recentCalls.filter((c) => visible(c.platform)).slice(0, limit).map((c) => ({
         time:     new Date(c.timestamp).toISOString(),
         platform: c.platform,
         action:   c.action,
@@ -112,7 +121,7 @@ export async function call(_instanceId: string, toolName: string, args: Record<s
 
     case 'get_error_patterns': {
       const ins = getInsights(days)
-      return ins.errorPatterns.map((e) => ({
+      return ins.errorPatterns.filter((e) => visible(e.platform)).map((e) => ({
         platform:  e.platform,
         action:    e.action,
         error:     e.error,
@@ -123,7 +132,7 @@ export async function call(_instanceId: string, toolName: string, args: Record<s
 
     case 'get_top_actions': {
       const ins = getInsights(days)
-      return ins.topActions.map((a) => ({
+      return ins.topActions.filter((a) => visible(a.platform)).map((a) => ({
         platform:   a.platform,
         action:     a.action,
         calls:      a.total,
@@ -134,13 +143,18 @@ export async function call(_instanceId: string, toolName: string, args: Record<s
     }
 
     case 'get_sessions': {
+      // A session that touched any out-of-scope platform is dropped entirely rather than
+      // listed with its platform list trimmed — the call/error counts would still describe
+      // activity the caller cannot see.
       const sessions = getSessions(days)
-      return sessions.map((s) => ({
+        .map((s) => ({ s, platforms: s.platform_list?.split(',').filter(Boolean) ?? [] }))
+        .filter(({ platforms }) => platforms.every(visible))
+      return sessions.map(({ s, platforms }) => ({
         sessionId:  s.session_id,
         started:    new Date(s.started_at).toISOString(),
         duration:   `${Math.round((s.ended_at - s.started_at) / 1000)}s`,
         calls:      s.calls,
-        platforms:  s.platform_list?.split(',') ?? [],
+        platforms,
         errors:     s.errors,
       }))
     }

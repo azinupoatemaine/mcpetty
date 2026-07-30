@@ -2,19 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isAuthorizedRequest, getSessionUsernameFromRequest } from '../../../../lib/auth'
 import { withActor } from '../../../../lib/audit'
 import { writeAuditEvent } from '../../../../lib/db'
-import { getApprovalRequest, decideApproval, getInstalledMCPs, storeApprovalResult } from '../../../../lib/db'
-import { hashGatewayKey } from '../../../../lib/crypto'
-import { getMasterGatewayKey, findGatewayByKeyHash } from '../../../../lib/db'
+import { getApprovalRequest, decideApproval, getInstalledMCPs, storeApprovalResult, isApprovalExpired } from '../../../../lib/db'
+import { secretEquals } from '../../../../lib/crypto'
+import { getApproverKey } from '../../../../lib/db'
 import { NATIVE } from '../../../../lib/native'
 import { findCatalogEntry } from '../../../../lib/mcp-catalog'
 
+// Only the dedicated approver key may decide approvals over Bearer auth. Gateway and
+// namespace keys are explicitly NOT accepted: those are handed to the MCP client, so
+// honouring them would let an agent approve the request its own call just raised —
+// defeating the entire point of an approval rule.
 function isAuthorizedBearer(req: NextRequest): boolean {
   const auth = req.headers.get('authorization') ?? ''
   if (!auth.startsWith('Bearer ')) return false
-  const key = auth.slice(7)
-  if (key === getMasterGatewayKey()) return true
-  const gw = findGatewayByKeyHash(hashGatewayKey(key))
-  return !!gw
+  return secretEquals(auth.slice(7), getApproverKey())
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const approval = getApprovalRequest(id)
   if (!approval) return NextResponse.json({ error: 'Approval not found' }, { status: 404 })
   if (approval.status !== 'pending') return NextResponse.json({ error: 'Already decided' }, { status: 409 })
+  if (isApprovalExpired(approval)) return NextResponse.json({ error: 'Approval request expired' }, { status: 410 })
 
   const { decision, reason } = await req.json() as { decision: 'approved' | 'rejected'; reason?: string }
   if (decision !== 'approved' && decision !== 'rejected') return NextResponse.json({ error: 'decision must be approved or rejected' }, { status: 400 })

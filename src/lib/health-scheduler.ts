@@ -3,6 +3,7 @@ import { NATIVE } from './native'
 import { findCatalogEntry } from './mcp-catalog'
 import { initSession } from './mcp-client'
 import { getStdioBridge } from './process-manager'
+import { invalidatePlatformProbe } from './mcp-handler'
 
 const CHECK_INTERVAL_MS = 30_000
 
@@ -59,6 +60,7 @@ async function runChecks() {
       if (ok) {
         const wasDown = autoDisabled
         recordHealthOk(instanceId)
+        if (wasDown) invalidatePlatformProbe(instanceId)
         if (wasDown && webhookOn && webhookUrl) {
           fireWebhook(webhookUrl, {
             event: 'health_change', instance_id: instanceId,
@@ -67,6 +69,7 @@ async function runChecks() {
         }
       } else {
         const { autoDisabledNow, consecutiveFails } = recordHealthFail(instanceId, pingError ?? 'ping failed')
+        if (autoDisabledNow) invalidatePlatformProbe(instanceId)
         if (autoDisabledNow && webhookOn && webhookUrl) {
           fireWebhook(webhookUrl, {
             event: 'health_change', instance_id: instanceId,

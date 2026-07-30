@@ -1326,6 +1326,7 @@ export default function Dashboard() {
   const [countdown, setCountdown]   = useState<number | null>(null)
   const demo                        = useDemo()
   const reqId                       = useRef(0)
+  const hasLoadedOnce               = useRef(false)
 
   const fetchServers = useCallback(async () => {
     const id = ++reqId.current
@@ -1334,9 +1335,15 @@ export default function Dashboard() {
       setLast(new Date())
       setCountdown(120)
       setLoading(false)
+      hasLoadedOnce.current = true
       return
     }
-    setLoading(true)
+    // Only show the full blocking loading screen on the very first load. A background
+    // refresh (auto-poll, manual refresh click) keeps showing stale data instead of
+    // blanking the whole dashboard — a single unreachable MCP can stall this fetch for
+    // several seconds (see FETCH_TIMEOUT_MS in native/http.ts) and that shouldn't nuke
+    // an otherwise-fine server list every refresh cycle.
+    if (!hasLoadedOnce.current) setLoading(true)
     setCountdown(null)
     try {
       const res  = await fetch('/api/servers')
@@ -1345,6 +1352,7 @@ export default function Dashboard() {
       setServers(data)
       setLast(new Date())
       setCountdown(120)
+      hasLoadedOnce.current = true
     } catch { /* silent */ } finally { if (id === reqId.current) setLoading(false) }
   }, [demo])
 

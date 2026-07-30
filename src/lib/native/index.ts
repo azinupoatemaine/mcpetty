@@ -7,10 +7,17 @@ import * as wazuh       from './wazuh'
 import * as firefly     from './firefly'
 import * as mcpettyMeta from './mcpetty-meta'
 
+// Which instances the caller is allowed to see. Only handlers that report on MCPetty
+// itself need this — a normal handler talks to one backend and has nothing to scope.
+// Absent means unrestricted (dashboard / approver context).
+export interface CallScope {
+  instanceIds: string[] | null  // null = all installed
+}
+
 export interface NativeHandler {
   tools: MCPTool[]
   ping(instanceId: string): Promise<{ ok: boolean; error?: string }>
-  call(instanceId: string, toolName: string, args: Record<string, unknown>): Promise<unknown>
+  call(instanceId: string, toolName: string, args: Record<string, unknown>, scope?: CallScope): Promise<unknown>
 }
 
 export const NATIVE: Record<string, NativeHandler> = {

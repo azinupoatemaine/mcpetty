@@ -4,7 +4,9 @@ import {
   getInstalledMCPs, isToolEnabled, logToolCall, getSettingsMap, getSetting,
   getDescriptionOverrides, matchesApprovalRule, createApprovalRequest,
   getApprovalRequest, storeApprovalResult, getActionSnapshot, setActionSnapshot,
-  isDiffShown, markDiffShown, logSchemaTokens,
+  isDiffShown, markDiffShown, logSchemaTokens, isApprovalExpired,
+  listPromptsForScope, getPromptForScope,
+  type InstalledMCP,
 } from './db'
 import { findCatalogEntry } from './mcp-catalog'
 import { initSession, listTools, callTool, MCPTool } from './mcp-client'
@@ -41,7 +43,12 @@ export type MCPScope = {
 interface CacheEntry { result: unknown; expiresAt: number }
 const toolCache = new Map<string, CacheEntry>()
 
-interface PageEntry { items: unknown[]; pageSize: number; expiresAt: number }
+// platform + scopeId are part of the entry, not just the key: a page token is a bearer
+// reference to buffered tool output, and tokens travel (they are printed in tool results,
+// persisted to tool_call_log, and sent to webhooks). Without this binding any caller able
+// to reach get_page on one instance could redeem a token minted for another instance in
+// another namespace.
+interface PageEntry { items: unknown[]; pageSize: number; expiresAt: number; platform: string; scopeId: string | null }
 const pageCache = new Map<string, PageEntry>()
 const PAGE_SIZE  = 50
 const PAGE_TTL   = 10 * 60 * 1000
@@ -103,6 +110,32 @@ function deepRedact(obj: unknown, keys: string[]): unknown {
 
 function redact(args: Record<string, unknown>, keys: string[]): Record<string, unknown> {
   return deepRedact(args, [...DEFAULT_REDACT_KEYS, ...keys]) as Record<string, unknown>
+}
+
+// Tool *results* leave the process in two places that outlive the call — tool_call_log
+// (plaintext, rendered in Insights) and the webhook preview. Backend responses routinely
+// carry secrets: container env, stack files, agent keys. Redaction used to cover args
+// only; results get the same treatment before either sink sees them.
+function redactResultText(result: unknown, keys: string[]): string {
+  if (result === null || typeof result !== 'object') {
+    return typeof result === 'string' ? result : JSON.stringify(result)
+  }
+  return JSON.stringify(deepRedact(result, [...DEFAULT_REDACT_KEYS, ...keys]))
+}
+
+// Substitutes {{arg}} in a prompt template. Only names the prompt actually declares are
+// substituted — an unknown {{placeholder}} is left as literal text rather than silently
+// resolving to empty, so a typo in a template is visible instead of invisible. Values are
+// inserted verbatim: the result is a user message the human is about to see, not markup.
+export function renderPrompt(
+  template: string,
+  declared: Array<{ name: string }>,
+  supplied: Record<string, unknown>
+): string {
+  const names = new Set(declared.map((a) => a.name))
+  return template.replace(/\{\{\s*([A-Za-z0-9_-]+)\s*\}\}/g, (whole, key: string) =>
+    names.has(key) ? String(supplied[key] ?? '') : whole
+  )
 }
 
 function matchesTrigger(platform: string, action: string, triggers: string[]): boolean {
@@ -212,36 +245,99 @@ function buildPlatformTool(
   }
 }
 
-async function getPlatformTools(instanceId: string, type: string, port: number): Promise<MCPTool[] | null> {
-  const entry = findCatalogEntry(type)
-  if (!entry) return null
+// tools/list used to ping every native instance and do a full initSession + listTools
+// round-trip to every remote one, on every single call — ten instances meant ten network
+// round-trips before the conversation could start. Worse, a failed probe returned null and
+// the platform silently disappeared from the tool list, so an agent mid-session lost a
+// capability with no explanation and no way to tell "gone" from "broken".
+//
+// Now: probes are cached, health the scheduler already collected is trusted when it is
+// fresh, and a known-but-unreachable platform is listed with an [OFFLINE] marker instead
+// of vanishing. Its actions still appear, so the model can see what it *would* be able to
+// do and report the outage rather than silently working around it.
+const PROBE_TTL_MS = 60_000
 
+interface ProbeResult { tools: MCPTool[]; online: boolean; error?: string }
+interface ProbeEntry extends ProbeResult { expiresAt: number }
+const probeCache = new Map<string, ProbeEntry>()
+
+export function invalidatePlatformProbe(instanceId?: string): void {
+  if (instanceId) probeCache.delete(instanceId)
+  else probeCache.clear()
+}
+
+// A health record counts as authoritative only while the scheduler is actually maintaining
+// it — interval > 0 and last checked within two intervals. Otherwise it is stale data from
+// a config that has since been turned off, and we probe instead.
+function freshHealth(inst: InstalledMCP): { online: boolean; error?: string } | null {
+  if (inst.healthCheckIntervalSeconds <= 0 || !inst.healthLastCheckedAt) return null
+  if (Date.now() - inst.healthLastCheckedAt > inst.healthCheckIntervalSeconds * 2000) return null
+  if (inst.healthLastStatus === 'ok')   return { online: true }
+  if (inst.healthLastStatus === 'fail') return { online: false, error: inst.healthLastError ?? 'health check failing' }
+  return null
+}
+
+async function probePlatform(inst: InstalledMCP): Promise<ProbeResult> {
+  const { instanceId, type, port } = inst
+  const entry = findCatalogEntry(type)
+  if (!entry) return { tools: [], online: false, error: `Type "${type}" not in catalog` }
+
+  // Native tool lists are static TypeScript — they are known whether or not the backend
+  // answers, so a failed probe costs liveness, never the action list.
   if (entry.transport === 'native') {
     const handler = NATIVE[type]
-    if (!handler) return null
-    const { ok } = await withNativeTimeout(handler.ping(instanceId), `${type}.ping`)
-    return ok ? handler.tools : null
+    if (!handler) return { tools: [], online: false, error: `No native handler for "${type}"` }
+    const health = freshHealth(inst)
+    if (health) return { tools: handler.tools, ...health }
+    try {
+      const { ok, error } = await withNativeTimeout(handler.ping(instanceId), `${type}.ping`)
+      return { tools: handler.tools, online: ok, error: ok ? undefined : (error ?? 'ping failed') }
+    } catch (e) {
+      return { tools: handler.tools, online: false, error: e instanceof Error ? e.message : 'ping failed' }
+    }
   }
+
   if (entry.transport === 'stdio') {
     const bridge = getStdioBridge(instanceId)
-    if (!bridge) return null
-    try { return await bridge.listTools() } catch { return null }
+    if (!bridge) return { tools: [], online: false, error: 'Process not running' }
+    try { return { tools: await bridge.listTools(), online: true } }
+    catch (e) { return { tools: [], online: false, error: e instanceof Error ? e.message : 'listTools failed' } }
   }
+
   if (entry.transport === 'http-proxy') {
     const url   = getCredential(instanceId, 'MCP_URL')
     const token = getCredential(instanceId, 'MCP_TOKEN')
-    if (!url) return null
+    if (!url) return { tools: [], online: false, error: 'MCP_URL not configured' }
     try {
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
       const { sessionId } = await initSession(url, headers)
-      return await listTools(url, sessionId, headers)
-    } catch { return null }
+      return { tools: await listTools(url, sessionId, headers), online: true }
+    } catch (e) {
+      return { tools: [], online: false, error: e instanceof Error ? e.message : 'unreachable' }
+    }
   }
+
   try {
     const url = `http://127.0.0.1:${port}/mcp`
     const { sessionId } = await initSession(url)
-    return await listTools(url, sessionId)
-  } catch { return null }
+    return { tools: await listTools(url, sessionId), online: true }
+  } catch (e) {
+    return { tools: [], online: false, error: e instanceof Error ? e.message : 'unreachable' }
+  }
+}
+
+async function getPlatformProbe(inst: InstalledMCP): Promise<ProbeResult> {
+  const cached = probeCache.get(inst.instanceId)
+  if (cached && Date.now() < cached.expiresAt) return cached
+
+  const result = await probePlatform(inst)
+  // Keep the last known action list for a remote instance that has gone down, so it is
+  // reported as offline rather than disappearing.
+  if (!result.online && result.tools.length === 0 && cached?.tools.length) {
+    result.tools = cached.tools
+  }
+  probeCache.set(inst.instanceId, { ...result, expiresAt: Date.now() + PROBE_TTL_MS })
+  return result
 }
 
 export async function collectPlatforms(scope: MCPScope): Promise<MCPTool[]> {
@@ -249,27 +345,35 @@ export async function collectPlatforms(scope: MCPScope): Promise<MCPTool[]> {
   if (scope.instanceIds !== null) installed = installed.filter((m) => scope.instanceIds!.includes(m.instanceId))
   const platforms: MCPTool[] = []
   await Promise.all(
-    installed.map(async ({ instanceId, type, name, port, tags }) => {
-      const entry = findCatalogEntry(type)
+    installed.map(async (inst) => {
+      const entry = findCatalogEntry(inst.type)
       if (!entry) return
       try {
-        const tools     = await getPlatformTools(instanceId, type, port)
-        const overrides = scope.getDescriptionOverrides(instanceId)
-        const prefix    = tags.length ? tags.map((t) => `[${t}]`).join('') + ' ' : ''
-        if (tools) platforms.push(buildPlatformTool(instanceId, type, name, prefix + entry.description, tools, scope, overrides))
-      } catch { /* unavailable */ }
+        const probe = inst.enabled
+          ? await getPlatformProbe(inst)
+          : { tools: NATIVE[inst.type]?.tools ?? probeCache.get(inst.instanceId)?.tools ?? [], online: false, error: inst.autoDisabled ? `auto-disabled after ${inst.healthConsecutiveFails} failed health checks: ${inst.healthLastError ?? 'unknown error'}` : 'disabled' }
+
+        // Nothing known about this platform's actions — listing a tool with an empty
+        // action enum would be an invalid schema, so it genuinely has to be omitted.
+        if (!probe.tools.length) return
+
+        const overrides = scope.getDescriptionOverrides(inst.instanceId)
+        const tagPrefix = inst.tags.length ? inst.tags.map((t) => `[${t}]`).join('') + ' ' : ''
+        const offline   = probe.online ? '' : `[OFFLINE — ${probe.error ?? 'unreachable'}. Calls will fail; report this rather than working around it.] `
+        platforms.push(buildPlatformTool(inst.instanceId, inst.type, inst.name, offline + tagPrefix + entry.description, probe.tools, scope, overrides))
+      } catch { /* never let one bad instance break the whole list */ }
     })
   )
   return platforms
 }
 
-export async function executeTool(instanceId: string, type: string, port: number, action: string, args: Record<string, unknown>): Promise<unknown> {
+export async function executeTool(instanceId: string, type: string, port: number, action: string, args: Record<string, unknown>, scope?: MCPScope): Promise<unknown> {
   const entry = findCatalogEntry(type)
   if (!entry) throw new Error(`Type "${type}" not in catalog`)
   if (entry.transport === 'native') {
     const handler = NATIVE[type]
     if (!handler) throw new Error(`No native handler for type "${type}"`)
-    return withNativeTimeout(handler.call(instanceId, action, args), `${type}.${action}`)
+    return withNativeTimeout(handler.call(instanceId, action, args, scope ? { instanceIds: scope.instanceIds } : undefined), `${type}.${action}`)
   }
   if (entry.transport === 'stdio') {
     const bridge = getStdioBridge(instanceId)
@@ -317,7 +421,7 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
     sessions.set(sessionId, { created: Date.now() })
     const res = rpcOk(id, {
       protocolVersion: LATEST_PROTOCOL_VERSION,
-      capabilities:    { tools: { listChanged: true } },
+      capabilities:    { tools: { listChanged: true }, prompts: { listChanged: true } },
       serverInfo:      { name: 'MCPetty', version: '1.0.5' },
       instructions:    "One tool per platform. Call with { action: '<action>', args: { ... } }. Available actions are listed in each tool's description.",
     })
@@ -339,6 +443,36 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
     return rpcOk(id, { tools })
   }
 
+  // ── Prompts ────────────────────────────────────────────────────────────────
+  // Prompts cost nothing in the per-request tool schema — the client fetches them on
+  // demand — so they are the cheapest place to put a runbook.
+
+  if (method === 'prompts/list') {
+    const prompts = listPromptsForScope(scope.id).map((p) => ({
+      name:        p.name,
+      description: p.description,
+      arguments:   p.arguments.map((a) => ({ name: a.name, description: a.description, required: a.required })),
+    }))
+    return rpcOk(id, { prompts })
+  }
+
+  if (method === 'prompts/get') {
+    const name = (params?.name as string) ?? ''
+    if (!name) return rpcErr(id, -32602, 'prompts/get requires "name"')
+
+    const prompt = getPromptForScope(scope.id, name)
+    if (!prompt) return rpcErr(id, -32602, `Prompt "${name}" not found`)
+
+    const supplied = (params?.arguments as Record<string, unknown>) ?? {}
+    const missing  = prompt.arguments.filter((a) => a.required && !String(supplied[a.name] ?? '').trim())
+    if (missing.length) return rpcErr(id, -32602, `Missing required argument${missing.length > 1 ? 's' : ''}: ${missing.map((a) => a.name).join(', ')}`)
+
+    return rpcOk(id, {
+      description: prompt.description,
+      messages: [{ role: 'user', content: { type: 'text', text: renderPrompt(prompt.template, prompt.arguments, supplied) } }],
+    })
+  }
+
   if (method === 'tools/call') {
     sweepCache()
     const platformId = (params?.name as string) ?? ''
@@ -353,6 +487,16 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
     if (!installed)  return rpcErr(id, -32602, `Platform "${platformId}" is not installed`)
     if (scope.instanceIds !== null && !scope.instanceIds.includes(platformId)) return rpcErr(id, -32602, `Platform "${platformId}" not in this namespace`)
     if (!scope.isActionEnabled(platformId, action, installed.type)) return rpcErr(id, -32602, `Action "${action}" is disabled`)
+    // Health auto-disable used to set installed_mcps.enabled = 0 and nothing on this path
+    // read it, so a platform the scheduler had given up on still accepted calls and burned
+    // the full 30s native timeout on each one.
+    if (!installed.enabled) {
+      return rpcOk(id, toolError(
+        installed.autoDisabled
+          ? `Platform "${platformId}" was auto-disabled after ${installed.healthConsecutiveFails} failed health checks (${installed.healthLastError ?? 'unknown error'}). It will re-enable automatically once health checks pass.`
+          : `Platform "${platformId}" is disabled.`
+      ))
+    }
 
     // check_approval
     if (action === 'check_approval') {
@@ -361,11 +505,18 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
       const req2 = getApprovalRequest(approvalId)
       if (!req2) return rpcOk(id, toolError(`Approval "${approvalId}" not found`))
       if (req2.instanceId !== platformId) return rpcOk(id, toolError('Approval belongs to a different platform'))
+      // The scope check above validated the literal action "check_approval". The action
+      // that actually runs is req2.action, and it has to clear this caller's filters too —
+      // otherwise a namespace with the action disabled could redeem an approval minted by
+      // a namespace where it is allowed.
+      if (!scope.isActionEnabled(platformId, req2.action, installed.type))
+        return rpcOk(id, toolError(`Action "${req2.action}" is disabled`))
       if (req2.status === 'pending') return rpcOk(id, toolResult('Still waiting for human approval. Try again in a few seconds.'))
       if (req2.status === 'rejected') return rpcOk(id, toolResult(`Action rejected by human. Reason: ${req2.rejectReason ?? 'none given'}. Do not retry automatically.`))
       if (req2.resultJson) return rpcOk(id, toolResult(JSON.parse(req2.resultJson)))
+      if (isApprovalExpired(req2)) return rpcOk(id, toolError('Approval expired before it was redeemed. Re-request it.'))
       try {
-        const raw = await executeTool(platformId, installed.type, installed.port, req2.action, JSON.parse(req2.argsJson))
+        const raw = await executeTool(platformId, installed.type, installed.port, req2.action, JSON.parse(req2.argsJson), scope)
         storeApprovalResult(approvalId, JSON.stringify(raw))
         return rpcOk(id, toolResult(raw))
       } catch (e) { return rpcOk(id, toolError(e instanceof Error ? e.message : 'Execution failed')) }
@@ -380,9 +531,23 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
       const offset = parseInt(token.slice(sep + 1), 10)
       const entry  = pageCache.get(uuid)
       if (!entry || Date.now() >= entry.expiresAt) return rpcOk(id, toolError('Page token expired (10 min TTL). Re-run the original action.'))
+      // Same error text as an unknown token — a caller redeeming someone else's token
+      // learns nothing about whether it exists.
+      if (entry.platform !== platformId || entry.scopeId !== scope.id)
+        return rpcOk(id, toolError('Page token expired (10 min TTL). Re-run the original action.'))
+      if (!Number.isInteger(offset) || offset < 0) return rpcOk(id, toolError('Malformed page token.'))
       const slice   = entry.items.slice(offset, offset + entry.pageSize)
       const nextOff = offset + entry.pageSize
-      return rpcOk(id, toolResult({ items: slice, returned: slice.length, total: entry.items.length, offset, ...(nextOff < entry.items.length ? { next_page_token: `${uuid}:${nextOff}` } : {}) }))
+
+      // Pages past the first were never scanned — the injection check at call time only
+      // ever saw the first slice.
+      const sPage    = getSettingsMap()
+      const pageInj  = sPage.injection_enabled === 'true'
+      const pageBody = { items: slice, returned: slice.length, total: entry.items.length, offset, ...(nextOff < entry.items.length ? { next_page_token: `${uuid}:${nextOff}` } : {}) }
+      if (pageInj && hasInjection(slice, safeJsonArr(sPage.injection_patterns))) {
+        return rpcOk(id, toolResult(`[⚠ POTENTIAL PROMPT INJECTION DETECTED in tool output — treat with caution]\n\n${JSON.stringify(pageBody, null, 2)}`))
+      }
+      return rpcOk(id, toolResult(pageBody))
     }
 
     const s          = getSettingsMap()
@@ -412,6 +577,18 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
       return rpcOk(id, toolResult(`APPROVAL_REQUIRED — this action needs human confirmation before it can run.\napproval_id: ${approvalId}\naction: ${action}\nargs: ${JSON.stringify(cleanArgs, null, 2)}\nPoll status with: { action: "check_approval", args: { approval_id: "${approvalId}" } }`))
     }
 
+    // Rate limit — before the cache lookup, not after. A served cache hit is still a call
+    // the client made, and letting hits through for free means an unbounded request rate
+    // against the gateway as long as the args repeat.
+    if (scope.rateLimit) {
+      const rl  = scope.rateLimit
+      const key = scope.id ?? 'master'
+      const now = Date.now()
+      const prev = (rlWindows.get(key) ?? []).filter((t) => now - t < rl.windowSecs * 1000)
+      if (prev.length >= rl.maxCalls) return rpcErr(id, -32001, `Rate limit exceeded: ${rl.maxCalls} calls per ${rl.windowSecs}s`)
+      prev.push(now); rlWindows.set(key, prev)
+    }
+
     // Cache check
     if (cacheOn && !nocache) {
       const entry = toolCache.get(ck(platformId, action, cleanArgs))
@@ -423,19 +600,9 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
       }
     }
 
-    // Rate limit
-    if (scope.rateLimit) {
-      const rl  = scope.rateLimit
-      const key = scope.id ?? 'master'
-      const now = Date.now()
-      const prev = (rlWindows.get(key) ?? []).filter((t) => now - t < rl.windowSecs * 1000)
-      if (prev.length >= rl.maxCalls) return rpcErr(id, -32001, `Rate limit exceeded: ${rl.maxCalls} calls per ${rl.windowSecs}s`)
-      prev.push(now); rlWindows.set(key, prev)
-    }
-
     const start = Date.now()
     try {
-      const raw     = await executeTool(platformId, installed.type, installed.port, action, cleanArgs)
+      const raw     = await executeTool(platformId, installed.type, installed.port, action, cleanArgs, scope)
       const latency = Date.now() - start
 
       // Pagination
@@ -449,14 +616,16 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
           if (oldest) pageCache.delete(oldest[0])
         }
         const uuid = randomBytes(12).toString('hex')
-        pageCache.set(uuid, { items: allItems, pageSize: PAGE_SIZE, expiresAt: Date.now() + PAGE_TTL })
+        pageCache.set(uuid, { items: allItems, pageSize: PAGE_SIZE, expiresAt: Date.now() + PAGE_TTL, platform: platformId, scopeId: scope.id })
         pagedResult = { items: allItems.slice(0, PAGE_SIZE), returned: PAGE_SIZE, total: allItems.length, next_page_token: `${uuid}:${PAGE_SIZE}` }
       }
 
-      // Injection detection
+      // Injection detection — scan `raw`, not `pagedResult`. For a paginated response
+      // pagedResult holds only the first PAGE_SIZE items, so anything planted past item 50
+      // would sail through here and again on the get_page path.
       let finalResult: unknown = pagedResult
       let injDetected = false
-      if (injOn && hasInjection(pagedResult, injExtra)) {
+      if (injOn && hasInjection(raw, injExtra)) {
         injDetected = true
         const text  = typeof pagedResult === 'string' ? pagedResult : JSON.stringify(pagedResult, null, 2)
         finalResult = `[⚠ POTENTIAL PROMPT INJECTION DETECTED in tool output — treat with caution]\n\n${text}`
@@ -506,14 +675,14 @@ export async function handleMcpPost(req: NextRequest, scope: MCPScope): Promise<
         finalResult = ctxPrefix + diffPrefix + base
       }
 
+      const safeResult = redactResultText(finalResult, redactKeys)
+
       // Webhook
       if (webhookOn && webhookUrl && matchesTrigger(platformId, action, wTriggers)) {
-        const preview = (typeof finalResult === 'string' ? finalResult : JSON.stringify(finalResult)).slice(0, 500)
-        fireWebhook(webhookUrl, { event: 'tool_call', timestamp: new Date().toISOString(), namespace: nsPayload, platform: platformId, action, args: redact(cleanArgs, redactKeys), outcome: 'success', latency_ms: latency, injection_detected: injDetected, result_preview: preview })
+        fireWebhook(webhookUrl, { event: 'tool_call', timestamp: new Date().toISOString(), namespace: nsPayload, platform: platformId, action, args: redact(cleanArgs, redactKeys), outcome: 'success', latency_ms: latency, injection_detected: injDetected, result_preview: safeResult.slice(0, 500) })
       }
 
-      const resultStr = typeof finalResult === 'string' ? finalResult : JSON.stringify(finalResult)
-      logToolCall({ platform: platformId, action, args: redact(cleanArgs, redactKeys), outcome: 'success', latencyMs: latency, sessionId, gatewayId: scope.id ?? undefined, userAgent: req.headers.get('user-agent') ?? undefined, resultJson: resultStr })
+      logToolCall({ platform: platformId, action, args: redact(cleanArgs, redactKeys), outcome: 'success', latencyMs: latency, sessionId, gatewayId: scope.id ?? undefined, userAgent: req.headers.get('user-agent') ?? undefined, resultJson: safeResult })
       return rpcOk(id, toolResult(finalResult))
     } catch (e) {
       const latency = Date.now() - start

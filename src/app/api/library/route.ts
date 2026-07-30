@@ -7,6 +7,7 @@ import { withActor } from '../../../lib/audit'
 import { writeAuditEvent } from '../../../lib/db'
 import { NATIVE } from '../../../lib/native'
 import { broadcastNotification } from '../../../lib/sse-bus'
+import { invalidatePlatformProbe } from '../../../lib/mcp-handler'
 
 // GET /api/library — catalog types with their installed instances
 export async function GET(req: NextRequest) {
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
 
   installMCP(instanceId, type, instanceName || type, entry.internalPort ?? 0)
   startMCP(instanceId, type, entry.internalPort ?? 0)
+  invalidatePlatformProbe(instanceId)
   broadcastNotification({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
 
   withActor({ actorType: 'user', actorId: getSessionUsernameFromRequest(req) }, () => {
@@ -81,6 +83,7 @@ export async function DELETE(req: NextRequest) {
   })
   stopMCP(instanceId)
   uninstallMCP(instanceId)
+  invalidatePlatformProbe(instanceId)
   broadcastNotification({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
 
   return NextResponse.json({ ok: true })

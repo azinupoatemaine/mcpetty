@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { encrypt, decrypt, hashGatewayKey } from '../../src/lib/crypto'
+import { encrypt, decrypt, hashGatewayKey, secretEquals, sealSecret, openSecret } from '../../src/lib/crypto'
 
 describe('encrypt / decrypt', () => {
   it('round-trips plaintext', () => {
@@ -76,3 +76,55 @@ describe('hashGatewayKey', () => {
   })
 })
 
+
+describe('secretEquals', () => {
+  it('matches identical secrets', () => {
+    expect(secretEquals('abc123', 'abc123')).toBe(true)
+  })
+
+  it('rejects different secrets', () => {
+    expect(secretEquals('abc123', 'abc124')).toBe(false)
+  })
+
+  it('rejects secrets of different length without throwing', () => {
+    expect(secretEquals('short', 'a-much-longer-secret-value')).toBe(false)
+    expect(secretEquals('', 'x')).toBe(false)
+  })
+})
+
+describe('sealSecret / openSecret', () => {
+  it('round-trips a gateway key', () => {
+    const key = 'Zm9vYmFyLWdhdGV3YXkta2V5LXZhbHVl'
+    expect(openSecret(sealSecret(key, 'master_gateway_key'), 'master_gateway_key')).toBe(key)
+  })
+
+  it('produces base64 that does not contain the plaintext', () => {
+    const sealed = sealSecret('super-secret-key', 'master_gateway_key')
+    expect(sealed).not.toContain('super-secret-key')
+    expect(sealed).toMatch(/^[A-Za-z0-9+/]+={0,2}$/)
+  })
+
+  it('is non-deterministic (fresh IV per seal) but both open', () => {
+    const a = sealSecret('same', 'label')
+    const b = sealSecret('same', 'label')
+    expect(a).not.toBe(b)
+    expect(openSecret(a, 'label')).toBe('same')
+    expect(openSecret(b, 'label')).toBe('same')
+  })
+
+  it('refuses to open under a different label', () => {
+    const sealed = sealSecret('value', 'master_gateway_key')
+    expect(() => openSecret(sealed, 'approver_key')).toThrow()
+  })
+
+  it('rejects a truncated blob rather than returning garbage', () => {
+    const sealed = sealSecret('value', 'label')
+    expect(() => openSecret(sealed.slice(0, 8), 'label')).toThrow()
+  })
+
+  it('rejects a tampered ciphertext (GCM tag check)', () => {
+    const buf = Buffer.from(sealSecret('value', 'label'), 'base64')
+    buf[buf.length - 1] ^= 0xff
+    expect(() => openSecret(buf.toString('base64'), 'label')).toThrow()
+  })
+})

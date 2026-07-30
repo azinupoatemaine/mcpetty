@@ -53,6 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  if (!checkOrigin(req)) return new NextResponse('Forbidden', { status: 403 })
   const { slug } = await params
   const ns = resolveNamespace(req, slug)
   if (!ns) return new NextResponse('Unauthorized', { status: 401 })

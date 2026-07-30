@@ -118,6 +118,16 @@ export const CATALOG: CatalogEntry[] = [
     ],
   },
   {
+    id:          'custom',
+    name:        'Any Remote MCP',
+    description: 'A remote MCP server of your own. Point MCPetty at any Streamable HTTP endpoint and it gains tool filters, approvals, namespaces and telemetry.',
+    transport:   'http-proxy',
+    credentials: [
+      { key: 'MCP_URL',   label: 'MCP Endpoint', description: 'Full URL of the MCP server, e.g. http://192.168.1.x:3000/mcp', type: 'url',    required: true  },
+      { key: 'MCP_TOKEN', label: 'Bearer Token', description: 'Sent as Authorization: Bearer. Leave blank if the server needs no auth.', type: 'secret', required: false },
+    ],
+  },
+  {
     id:          'mcpetty',
     name:        'MCPetty Meta',
     description: 'Read-only access to MCPetty itself — installed MCPs, call history, error patterns, and session data.',

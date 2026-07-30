@@ -1,5 +1,6 @@
 import { ChildProcess } from 'child_process'
 import type { MCPTool } from './mcp-client'
+import { MAX_TOOL_PAGES } from './mcp-client'
 
 interface Pending {
   resolve: (v: unknown) => void
@@ -69,15 +70,31 @@ export class StdioBridge {
     this.initialized = true
   }
 
+  // Same guard as the HTTP client: a subprocess that keeps handing back the same cursor
+  // must not spin this loop forever.
   async listTools(): Promise<MCPTool[]> {
     await this.initialize()
     const tools: MCPTool[] = []
     let cursor: string | undefined
+    let pages = 0
+    const seenCursors = new Set<string>()
 
     do {
       const res = await this.rpc('tools/list', cursor ? { cursor } : {}) as { tools?: MCPTool[]; nextCursor?: string }
       tools.push(...(res?.tools ?? []))
       cursor = res?.nextCursor
+
+      if (cursor) {
+        if (seenCursors.has(cursor)) {
+          console.warn(`[MCPetty] stdio MCP repeated tools/list cursor — stopping at ${tools.length} tools`)
+          break
+        }
+        seenCursors.add(cursor)
+      }
+      if (++pages >= MAX_TOOL_PAGES) {
+        console.warn(`[MCPetty] stdio MCP exceeded ${MAX_TOOL_PAGES} tools/list pages — truncating at ${tools.length} tools`)
+        break
+      }
     } while (cursor)
 
     return tools

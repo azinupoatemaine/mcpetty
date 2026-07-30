@@ -1,6 +1,11 @@
 // Shared HTTP helpers for all native MCP handlers.
 // Every handler MUST use these instead of raw fetch().
 
+// Node's default fetch (undici) connect timeout is 10s. Ping/status checks run inside
+// Promise.all in /api/servers, so one unreachable host stalls the whole dashboard refresh
+// for as long as this takes — keep it well under that.
+const FETCH_TIMEOUT_MS = 5000
+
 // ─── TLS handling ─────────────────────────────────────────────────────────────
 
 function isPrivateHost(url: string): boolean {
@@ -47,12 +52,20 @@ function networkError(baseUrl: string, e: unknown): Error {
 
 // ─── Core fetch with auto-retry for self-signed certs on private hosts ────────
 
+function withTimeout(init: RequestInit): RequestInit {
+  const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
+  return { ...init, signal }
+}
+
 async function smartFetch(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(url, init)
+    return await fetch(url, withTimeout(init))
   } catch (e) {
     if (isCertError(e) && isPrivateHost(url)) {
-      return fetchInsecure(url, init)
+      // A fresh signal — the first attempt's timeout budget is already spent, and reusing
+      // an expired AbortSignal would abort the retry before it left the process.
+      return fetchInsecure(url, withTimeout(init))
     }
     throw e
   }

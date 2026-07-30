@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getMasterGatewayKey, getSetting } from '../../lib/db'
+import { secretEquals } from '../../lib/crypto'
 import {
   checkOrigin, checkProtocolVersion,
   createMasterScope, handleMcpPost, handleMcpGet, handleMcpDelete,
@@ -13,7 +14,8 @@ function masterEnabled(): boolean {
 
 function authorized(req: NextRequest): boolean {
   const auth = req.headers.get('authorization') ?? ''
-  return auth.startsWith('Bearer ') && auth.slice(7) === getMasterGatewayKey()
+  if (!auth.startsWith('Bearer ')) return false
+  return secretEquals(auth.slice(7), getMasterGatewayKey())
 }
 
 const DISABLED_RESP = NextResponse.json(
@@ -41,6 +43,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!checkOrigin(req)) return new NextResponse('Forbidden', { status: 403 })
   if (!masterEnabled()) return new NextResponse('Master gateway disabled', { status: 403 })
   if (!authorized(req)) return new NextResponse('Unauthorized', { status: 401 })
   return handleMcpDelete(req)

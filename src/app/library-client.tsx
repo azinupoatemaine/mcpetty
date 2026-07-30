@@ -16,6 +16,34 @@ interface InstanceRecord {
 
 interface ToolMeta { name: string; description?: string }
 
+interface TestResult {
+  ok:          boolean
+  error?:      string
+  latencyMs?:  number
+  toolCount?:  number
+  serverName?: string
+  skipped?:    boolean
+}
+
+function TestBanner({ result }: { result: TestResult }) {
+  const colour = result.skipped ? S.yellow : result.ok ? S.green : S.red
+  const text   = result.skipped
+    ? result.error
+    : result.ok
+      ? `Connected${result.serverName ? ` to ${result.serverName}` : ''} in ${result.latencyMs}ms — ${result.toolCount} tool${result.toolCount === 1 ? '' : 's'} available.`
+      : `Failed: ${result.error}`
+  return (
+    <div style={{ color: colour, fontSize: 11, marginTop: 8, lineHeight: 1.5, wordBreak: 'break-word' as const }}>
+      {result.ok && !result.skipped ? '✓ ' : '✗ '}{text}
+      {result.ok && !result.skipped && result.toolCount === 0 && (
+        <div style={{ color: S.yellow, marginTop: 3 }}>
+          Reachable but exposing zero tools — the token is usually valid yet scoped to nothing.
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface CatalogEntry {
   id: string; name: string; description: string; transport: string
   credentials: CatalogCredential[]
@@ -142,6 +170,24 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
   const [slugEdited, setSlugEdited] = useState(false)
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState<string | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<TestResult | null>(null)
+
+  async function test() {
+    setTesting(true); setTestResult(null); setError(null)
+    try {
+      const res = await fetch('/api/library/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: entry.id, credentials: form }),
+      })
+      setTestResult(await res.json() as TestResult)
+    } catch (e) {
+      setTestResult({ ok: false, error: e instanceof Error ? e.message : 'Test failed' })
+    } finally {
+      setTesting(false)
+    }
+  }
 
   function onNameChange(v: string) {
     setName(v)
@@ -256,8 +302,12 @@ function CatalogCard({ entry, onChanged }: { entry: CatalogEntry; onChanged: () 
             <button onClick={install} disabled={saving} className="btn-primary" style={{ padding: '7px 18px', fontSize: 13 }}>
               {saving ? 'Installing...' : 'Install'}
             </button>
-            <button onClick={() => { setOpen(false); setError(null) }} className="btn" style={{ padding: '7px 12px', fontSize: 13 }}>cancel</button>
+            <button onClick={test} disabled={testing} className="btn" style={{ padding: '7px 14px', fontSize: 13 }}>
+              {testing ? 'Testing...' : 'test connection'}
+            </button>
+            <button onClick={() => { setOpen(false); setError(null); setTestResult(null) }} className="btn" style={{ padding: '7px 12px', fontSize: 13 }}>cancel</button>
           </div>
+          {testResult && <TestBanner result={testResult} />}
         </div>
       )}
     </div>

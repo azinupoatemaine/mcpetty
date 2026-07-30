@@ -187,6 +187,12 @@ export async function initSession(
   return { sessionId, serverInfo: data?.result?.serverInfo }
 }
 
+// http-proxy instances point at a user-supplied URL, so the far end is not trusted to
+// terminate its own pagination. A server that echoes the same nextCursor forever would
+// otherwise spin here accumulating tools until the process dies — with tools/list awaiting
+// it, that stalls every gateway conversation.
+export const MAX_TOOL_PAGES = 50
+
 export async function listTools(
   url: string,
   sessionId: string,
@@ -195,6 +201,8 @@ export async function listTools(
   const tools: MCPTool[] = []
   let cursor: string | undefined = undefined
   let requestId = 2
+  let pages = 0
+  const seenCursors = new Set<string>()
 
   do {
     const res = await fetch(url, {
@@ -220,6 +228,18 @@ export async function listTools(
     const page = data?.result?.tools ?? []
     tools.push(...page)
     cursor = data?.result?.nextCursor
+
+    if (cursor) {
+      if (seenCursors.has(cursor)) {
+        console.warn(`[MCPetty] ${url} repeated tools/list cursor — stopping at ${tools.length} tools`)
+        break
+      }
+      seenCursors.add(cursor)
+    }
+    if (++pages >= MAX_TOOL_PAGES) {
+      console.warn(`[MCPetty] ${url} exceeded ${MAX_TOOL_PAGES} tools/list pages — truncating at ${tools.length} tools`)
+      break
+    }
   } while (cursor)
 
   return tools

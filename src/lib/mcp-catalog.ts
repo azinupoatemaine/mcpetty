@@ -118,6 +118,19 @@ export const CATALOG: CatalogEntry[] = [
     ],
   },
   {
+    id:          'sophos',
+    name:        'Sophos Firewall',
+    description: 'Firewall management — hosts, groups, services, firewall and NAT rules, VPN, users. Writes are gated behind a confirm step.',
+    transport:   'native',
+    credentials: [
+      { key: 'SOPHOS_URL',         label: 'Firewall URL',   description: 'Web console URL — port 4444 is assumed if you omit one, e.g. https://192.168.1.1:4444', type: 'url',    required: true  },
+      { key: 'SOPHOS_USERNAME',    label: 'API Username',   description: 'Admin user with API permission (Sophos: System → Backup & Firmware → API)',            type: 'text',   required: true  },
+      { key: 'SOPHOS_PASSWORD',    label: 'API Password',   description: 'Password for that user',                                                                type: 'secret', required: true  },
+      { key: 'SOPHOS_API_VERSION', label: 'API Version',    description: 'Defaults to 2200.1. Only change it if your SFOS build rejects that.',                   type: 'text',   required: false },
+      { key: 'SOPHOS_READONLY',    label: 'Read-only',      description: 'Set to "true" to refuse every write, no matter what the agent asks for.',               type: 'text',   required: false },
+    ],
+  },
+  {
     id:          'custom',
     name:        'Any Remote MCP',
     description: 'A remote MCP server of your own. Point MCPetty at any Streamable HTTP endpoint and it gains tool filters, approvals, namespaces and telemetry.',

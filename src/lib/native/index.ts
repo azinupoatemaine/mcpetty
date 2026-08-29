@@ -5,6 +5,7 @@ import * as karakeep    from './karakeep'
 import * as proxmox     from './proxmox'
 import * as wazuh       from './wazuh'
 import * as firefly     from './firefly'
+import * as sophos      from './sophos'
 import * as mcpettyMeta from './mcpetty-meta'
 
 // Which instances the caller is allowed to see. Only handlers that report on MCPetty
@@ -50,6 +51,11 @@ export const NATIVE: Record<string, NativeHandler> = {
     tools: firefly.TOOLS,
     ping:  firefly.ping,
     call:  firefly.call,
+  },
+  sophos: {
+    tools: sophos.TOOLS,
+    ping:  sophos.ping,
+    call:  sophos.call,
   },
   mcpetty: {
     tools: mcpettyMeta.TOOLS,

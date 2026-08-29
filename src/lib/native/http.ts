@@ -6,6 +6,10 @@
 // for as long as this takes — keep it well under that.
 const FETCH_TIMEOUT_MS = 5000
 
+// Body-authenticated backends (Sophos XML API) are slower than a REST call and never run
+// on the dashboard probe path, so they get a longer budget than FETCH_TIMEOUT_MS.
+const FORM_TIMEOUT_MS = 15000
+
 // ─── TLS handling ─────────────────────────────────────────────────────────────
 
 function isPrivateHost(url: string): boolean {
@@ -52,20 +56,20 @@ function networkError(baseUrl: string, e: unknown): Error {
 
 // ─── Core fetch with auto-retry for self-signed certs on private hosts ────────
 
-function withTimeout(init: RequestInit): RequestInit {
-  const timeoutSignal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+function withTimeout(init: RequestInit, ms: number = FETCH_TIMEOUT_MS): RequestInit {
+  const timeoutSignal = AbortSignal.timeout(ms)
   const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
   return { ...init, signal }
 }
 
-async function smartFetch(url: string, init: RequestInit): Promise<Response> {
+async function smartFetch(url: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
   try {
-    return await fetch(url, withTimeout(init))
+    return await fetch(url, withTimeout(init, timeoutMs))
   } catch (e) {
     if (isCertError(e) && isPrivateHost(url)) {
       // A fresh signal — the first attempt's timeout budget is already spent, and reusing
       // an expired AbortSignal would abort the retry before it left the process.
-      return fetchInsecure(url, withTimeout(init))
+      return fetchInsecure(url, withTimeout(init, timeoutMs))
     }
     throw e
   }
@@ -128,4 +132,35 @@ export async function gqlFetch<T>(
   const data = await res.json() as { data?: T; errors?: Array<{ message: string }> }
   if (data.errors?.length) throw new Error(`GraphQL error: ${data.errors[0].message}`)
   return data.data as T
+}
+
+// ─── Form-urlencoded fetch ────────────────────────────────────────────────────
+
+// For backends that authenticate inside the request body rather than a header
+// (Sophos Firewall's XML API posts a `reqxml` field with credentials embedded in
+// the XML). Callers own their own auth — no Authorization header is sent here.
+// Returns the raw response body; the caller parses it.
+export async function formFetch(
+  baseUrl:   string,
+  path:      string,
+  form:      Record<string, string>,
+  timeoutMs: number = FORM_TIMEOUT_MS
+): Promise<string> {
+  const url     = `${baseUrl}${path}`
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
+  const body    = new URLSearchParams(form).toString()
+
+  let res: Response
+  try {
+    res = await smartFetch(url, { method: 'POST', headers, body }, timeoutMs)
+  } catch (e) {
+    throw networkError(baseUrl, e)
+  }
+
+  const text = await res.text()
+  if (res.status === 401) throw new Error(`401 Unauthorized at ${path} — check your API credentials`)
+  if (res.status === 403) throw new Error(`403 Forbidden at ${path} — insufficient permissions`)
+  if (res.status === 404) throw new Error(`404 Not Found at ${path} — check the URL or resource ID`)
+  if (!res.ok) throw new Error(`HTTP ${res.status} at ${path}: ${text.slice(0, 300)}`)
+  return text
 }

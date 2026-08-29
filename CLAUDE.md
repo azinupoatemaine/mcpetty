@@ -20,6 +20,9 @@ Self-hosted MCP dashboard. One Docker container. MCPs run as native handlers. Al
 | `src/lib/native/index.ts` | Registry of native handlers (`NATIVE` map). `NativeHandler` interface defined here. |
 | `src/lib/native/wikijs.ts` | WikiJS — direct GraphQL calls, parameterized queries. |
 | `src/lib/native/portainer.ts` | Portainer — direct REST API calls with `X-API-Key`. |
+| `src/lib/native/sophos.ts` | Sophos Firewall — 41 actions over the SFOS XML API. Writes are gated. |
+| `src/lib/native/sophos-xml.ts` | SFOS XML protocol: envelope build, hand-written parser, status mapping, redaction, `isMutating`, `diffHash`. |
+| `src/lib/native/sophos-catalog.ts` | Verified SFOS tag catalog (18 tags) + record helpers. |
 | `src/instrumentation.ts` | Next.js startup hook: `ensureDefaultUser()` then `bootAll()`. |
 | `src/app/page.tsx` | Server component. Validates session, redirects to `/login`. |
 | `src/app/dashboard-client.tsx` | Dashboard UI (client component). Nav: Dashboard / Library / Insights. |
@@ -368,6 +371,45 @@ MCPetty targets self-hosted deployments, which frequently have no valid TLS cert
 
 ---
 
+## Sophos Firewall native handler
+
+`src/lib/native/sophos.ts` — 41 actions over the SFOS XML API. Ported from
+`github.com/iainmoffat/sophosfw` (architecture + safety model) with extra read coverage
+from `github.com/jelmervdm/sophos-firewall-mcp` (`User`, `LiveUser`, `SSLVPNPolicy`).
+
+- Endpoint `POST {base}/webconsole/APIController`, form field `reqxml`, port **4444**
+  assumed when the URL omits one. Uses `formFetch` from `native/http.ts`.
+- **Credentials ride inside the XML body**, not a header — unique among our handlers.
+  Everything that echoes XML goes through `redactXml()`. `preview` and `raw_xml_get` are
+  the paths that deliberately return XML; both redact.
+- Credentials: `SOPHOS_URL`, `SOPHOS_USERNAME`, `SOPHOS_PASSWORD`, plus optional
+  `SOPHOS_API_VERSION` (default 2200.1) and `SOPHOS_READONLY`.
+
+**Three write gates, all mandatory:**
+1. `SOPHOS_READONLY` is enforced in `send()`, the single transport chokepoint, so a bug in
+   any action handler still cannot reach the network with a mutation.
+2. `confirm: true` (strict `=== true`) — without it a mutating action returns a redacted
+   preview of the XML it *would* send and does not send it.
+3. `expected_diff_hash` — updates/deletes re-fetch, recompute `diffHash`, and refuse on
+   mismatch. Read actions stamp `_diffHash` so the value round-trips.
+
+**`isMutating()` must stay element-first.** It detects `<Set` / `<Remove` elements and
+*then* reads the operation attribute. Matching a specific attribute shape instead fails
+open — single quotes, a bare `<Set>` (SFOS treats it as add), any attribute ordered before
+`operation`, or an unknown operation value would all read as non-mutating and bypass both
+gate 1 and `raw_xml_get`'s read-only guard. The upstream Go project has this bug; we do
+not. Covered by `isMutating — fail-closed element detection` in `sophos-xml.test.ts`.
+
+**Repeated sibling elements must accumulate into arrays.** Sophos encodes group membership
+as repeated siblings and its updates use replace semantics, so a last-one-wins parser makes
+an ordinary read-modify-write silently evict every group member but the last. Regression
+fixtures must have 2+ members — a one-member fixture passes under a broken parser too.
+
+`_diffHash` and `_omitted` are synthetic fields stamped for the agent; `setEnv()` strips
+them at the write chokepoint so they can never reach the device.
+
+---
+
 ## Proxmox native handler
 
 `src/lib/native/proxmox.ts` — 38 tools. Key patterns:
@@ -412,4 +454,5 @@ Candidate native handlers to build next:
 Explicitly **not** building: Vaultwarden/Bitwarden. A credential-exfiltration surface wired
 to an LLM, inside a product whose whole job is holding credentials.
 
-Firefly III and n8n are already shipped (`native/firefly.ts`; n8n as an `http-proxy` catalog entry).
+Firefly III, n8n and Sophos Firewall are already shipped (`native/firefly.ts`,
+`native/sophos.ts`; n8n as an `http-proxy` catalog entry).

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { restFetch, gqlFetch } from '../../src/lib/native/http'
+import { restFetch, gqlFetch, formFetch } from '../../src/lib/native/http'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -138,5 +138,121 @@ describe('gqlFetch', () => {
     mockFetchThrow(err)
     await expect(gqlFetch('http://localhost:8080', 'tok', '{ x }'))
       .rejects.toThrow('localhost')
+  })
+})
+
+// ── formFetch ─────────────────────────────────────────────────────────────────
+
+describe('formFetch', () => {
+  it('returns the raw response body as text on 200', async () => {
+    mockFetch({ ok: true, status: 200, text: async () => '<Response><Login><status>Authentication Successful</status></Login></Response>' })
+    const res = await formFetch('https://example.com:4444', '/webconsole/APIController', { reqxml: '<Request/>' })
+    expect(res).toBe('<Response><Login><status>Authentication Successful</status></Login></Response>')
+  })
+
+  it('POSTs application/x-www-form-urlencoded with a correctly escaped body', async () => {
+    mockFetch({ ok: true, status: 200, text: async () => 'ok' })
+    await formFetch('http://example.com', '/api', { reqxml: '<a b="c">&</a>', user: 'admin user' })
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[0]).toBe('http://example.com/api')
+    expect(call[1].method).toBe('POST')
+    expect(call[1].headers['Content-Type']).toBe('application/x-www-form-urlencoded')
+    expect(call[1].body).toBe('reqxml=%3Ca+b%3D%22c%22%3E%26%3C%2Fa%3E&user=admin+user')
+  })
+
+  it('sends no Authorization header', async () => {
+    mockFetch({ ok: true, status: 200, text: async () => 'ok' })
+    await formFetch('http://example.com', '/api', { a: 'b' })
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[1].headers['Authorization']).toBeUndefined()
+  })
+
+  it('throws on 401 with specific message', async () => {
+    mockFetch({ ok: false, status: 401, text: async () => 'Unauthorized' })
+    await expect(formFetch('http://example.com', '/api', { a: 'b' }))
+      .rejects.toThrow('401 Unauthorized')
+  })
+
+  it('throws on 403 with specific message', async () => {
+    mockFetch({ ok: false, status: 403, text: async () => 'Forbidden' })
+    await expect(formFetch('http://example.com', '/api', { a: 'b' }))
+      .rejects.toThrow('403 Forbidden')
+  })
+
+  it('throws on 404 with specific message', async () => {
+    mockFetch({ ok: false, status: 404, text: async () => 'Not Found' })
+    await expect(formFetch('http://example.com', '/api', { a: 'b' }))
+      .rejects.toThrow('404 Not Found')
+  })
+
+  it('throws with status code and response body for other non-ok responses (e.g. Sophos auth failure)', async () => {
+    mockFetch({ ok: false, status: 534, text: async () => 'Authentication Failed' })
+    await expect(formFetch('http://example.com', '/api', { a: 'b' }))
+      .rejects.toThrow('HTTP 534 at /api: Authentication Failed')
+  })
+
+  it('throws a network error with localhost hint for localhost URLs', async () => {
+    const err = new TypeError('Failed to fetch')
+    ;(err as unknown as { cause: Error }).cause = new Error('ECONNREFUSED')
+    mockFetchThrow(err)
+    await expect(formFetch('http://localhost:4444', '/webconsole/APIController', { a: 'b' }))
+      .rejects.toThrow('localhost')
+  })
+
+  it('throws a network error without localhost hint for non-localhost URLs', async () => {
+    const err = new TypeError('Failed to fetch')
+    ;(err as unknown as { cause: Error }).cause = new Error('ECONNREFUSED')
+    mockFetchThrow(err)
+    const error = await formFetch('http://192.168.1.1:4444', '/api', { a: 'b' }).catch((e: unknown) => e)
+    expect((error as Error).message).not.toContain('"localhost"')
+    expect((error as Error).message).toContain('192.168.1.1')
+  })
+
+  it('defaults the timeout to 15000ms', async () => {
+    mockFetch({ ok: true, status: 200, text: async () => 'ok' })
+    const spy = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      await formFetch('http://example.com', '/api', { a: 'b' })
+      expect(spy).toHaveBeenCalledWith(15000)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('honours a timeoutMs override', async () => {
+    mockFetch({ ok: true, status: 200, text: async () => 'ok' })
+    const spy = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      await formFetch('http://example.com', '/api', { a: 'b' }, 500)
+      expect(spy).toHaveBeenCalledWith(500)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('never leaks the request body (password) into a status-code error message', async () => {
+    mockFetch({ ok: false, status: 534, text: async () => 'Authentication Failed' })
+    const error = await formFetch('http://example.com', '/webconsole/APIController', {
+      reqxml: '<Request><Login><Username>admin</Username><Password>Sup3rSecret!</Password></Login></Request>',
+    }).catch((e: unknown) => e)
+    expect((error as Error).message).not.toContain('Sup3rSecret!')
+  })
+
+  it('never leaks the request body (password) into a network error message', async () => {
+    const err = new TypeError('Failed to fetch')
+    ;(err as unknown as { cause: Error }).cause = new Error('ECONNREFUSED')
+    mockFetchThrow(err)
+    const error = await formFetch('http://example.com', '/webconsole/APIController', {
+      reqxml: '<Request><Login><Username>admin</Username><Password>Sup3rSecret!</Password></Login></Request>',
+    }).catch((e: unknown) => e)
+    expect((error as Error).message).not.toContain('Sup3rSecret!')
+  })
+
+  it('never leaks the request body (password) in the resolved value on success', async () => {
+    mockFetch({ ok: true, status: 200, text: async () => '<Response><Login><status>Authentication Successful</status></Login></Response>' })
+    const res = await formFetch('http://example.com', '/webconsole/APIController', {
+      reqxml: '<Request><Login><Username>admin</Username><Password>Sup3rSecret!</Password></Login></Request>',
+    })
+    expect(res).not.toContain('Sup3rSecret!')
   })
 })

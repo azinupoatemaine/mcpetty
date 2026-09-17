@@ -444,15 +444,24 @@ one rotated field without re-typing the rest.
 
 Candidate native handlers to build next:
 
-1. **Paperless-NGX** — Document management. REST API at `/api/`. Key tools: search documents, get content/metadata, list tags/correspondents/document types.
-2. ***arr suite** (Sonarr/Radarr/Prowlarr/Lidarr) — near-identical `/api/v3` + `X-Api-Key` APIs, so one parameterized handler covers four services. Best value-per-line on the list.
-3. **Immich** — Photos. `/api/`, `x-api-key`. CLIP/smart search is a strong agent surface.
-4. **Gitea / Forgejo** — `/api/v1`, token. Issues, PRs, repos.
-5. **Jellyfin** — Media server. REST API: search library, get items, manage users, trigger scans. Credential: `JELLYFIN_URL` + `JELLYFIN_TOKEN` (API key from dashboard).
-6. **Ollama** — Local LLM. API: list models, generate, pull models. Credential: `OLLAMA_URL` (no auth by default).
+1. ***arr suite** (Sonarr/Radarr/Prowlarr/Lidarr) — near-identical `/api/v3` + `X-Api-Key` APIs, so one parameterized handler covers four services. Best value-per-line on the list.
+2. **Immich** — Photos. `/api/`, `x-api-key`. CLIP/smart search is a strong agent surface. Asset upload needs `multipartFetch` (added in `native/http.ts` for Paperless — reuse it).
+3. **Gitea / Forgejo** — `/api/v1`, token. Issues, PRs, repos.
+4. **Jellyfin** — Media server. REST API: search library, get items, manage users, trigger scans. Credential: `JELLYFIN_URL` + `JELLYFIN_TOKEN` (API key from dashboard).
+5. **Ollama** — Local LLM. API: list models, generate, pull models. Credential: `OLLAMA_URL` (no auth by default).
 
 Explicitly **not** building: Vaultwarden/Bitwarden. A credential-exfiltration surface wired
 to an LLM, inside a product whose whole job is holding credentials.
 
-Firefly III, n8n and Sophos Firewall are already shipped (`native/firefly.ts`,
-`native/sophos.ts`; n8n as an `http-proxy` catalog entry).
+Firefly III, n8n, Sophos Firewall and Paperless-NGX are already shipped (`native/firefly.ts`,
+`native/sophos.ts`, `native/paperless.ts`; n8n as an `http-proxy` catalog entry).
+
+**Paperless-NGX** (`native/paperless.ts`) combines the best of three community MCP servers
+(`nloui/paperless-mcp`, `barryw/PaperlessMCP`, `cubinet-code/paperless-ngx-mcp`) into one
+50-tool handler: documents (list/get/search/create/update/delete, notes, metadata,
+suggestions, bulk edit), tags/correspondents/document types/storage paths/custom fields
+(full CRUD), saved views, share links, tasks, and trash. Token auth (`Authorization: Token
+<key>`, from Paperless → My Profile). Deliberately excludes binary-returning endpoints
+(thumbnail/preview/download/bulk-download) — MCPetty's gateway serialises every tool result
+as JSON text and logs it to `tool_call_log`, so a base64 PDF blob would bloat the call log
+for no payoff — no client here can render it inline anyway.

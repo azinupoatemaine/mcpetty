@@ -131,6 +131,16 @@ export const CATALOG: CatalogEntry[] = [
     ],
   },
   {
+    id:          'paperless',
+    name:        'Paperless-NGX',
+    description: 'Document management — search, tag, organise, and upload documents. Correspondents, document types, storage paths, custom fields, and trash.',
+    transport:   'native',
+    credentials: [
+      { key: 'PAPERLESS_URL',   label: 'Paperless-NGX URL', description: 'Base URL of your Paperless-NGX instance e.g. http://192.168.1.x:8000', type: 'url',    required: true },
+      { key: 'PAPERLESS_TOKEN', label: 'API Token',         description: 'Token from Paperless-NGX → My Profile → create/copy API token',         type: 'secret', required: true },
+    ],
+  },
+  {
     id:          'custom',
     name:        'Any Remote MCP',
     description: 'A remote MCP server of your own. Point MCPetty at any Streamable HTTP endpoint and it gains tool filters, approvals, namespaces and telemetry.',

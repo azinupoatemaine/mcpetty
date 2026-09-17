@@ -134,6 +134,41 @@ export async function gqlFetch<T>(
   return data.data as T
 }
 
+// ─── Multipart form-data fetch ────────────────────────────────────────────────
+
+// For file uploads (Paperless post_document, future Immich asset upload, etc).
+// Must NOT set Content-Type ourselves — fetch computes the multipart boundary from
+// the FormData body, and restFetch's forced 'application/json' header would break it.
+export async function multipartFetch<T>(
+  baseUrl:    string,
+  path:       string,
+  token:      string,
+  form:       FormData,
+  authHeader: string = 'Authorization',
+  authScheme: string = 'Bearer'
+): Promise<T> {
+  const url     = `${baseUrl}${path}`
+  const headers = { [authHeader]: authScheme ? `${authScheme} ${token}` : token }
+
+  let res: Response
+  try {
+    res = await smartFetch(url, { method: 'POST', headers, body: form }, FORM_TIMEOUT_MS)
+  } catch (e) {
+    throw networkError(baseUrl, e)
+  }
+
+  const text = await res.text()
+  if (res.status === 401) throw new Error(`401 Unauthorized at ${path} — check your API credentials`)
+  if (res.status === 403) throw new Error(`403 Forbidden at ${path} — insufficient permissions`)
+  if (res.status === 404) throw new Error(`404 Not Found at ${path} — check the URL or resource ID`)
+  if (!res.ok) throw new Error(`HTTP ${res.status} at ${path}: ${text.slice(0, 300)}`)
+  if (!text) return {} as T
+  // Some upload endpoints (Paperless's post_document) reply with a bare, unquoted
+  // id/UUID rather than a JSON-encoded value — fall back to the raw text instead of
+  // throwing on what would otherwise look like a successful upload.
+  try { return JSON.parse(text) as T } catch { return text as unknown as T }
+}
+
 // ─── Form-urlencoded fetch ────────────────────────────────────────────────────
 
 // For backends that authenticate inside the request body rather than a header

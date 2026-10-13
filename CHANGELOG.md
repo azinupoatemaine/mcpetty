@@ -4,6 +4,18 @@ MCPetty deploys continuously from `main`, so entries are dated rather than versi
 
 ---
 
+## 2026-10-13 — Synctropy native handler
+
+### Added
+
+- **Synctropy** native MCP (`native/synctropy.ts`): agent console REST API over
+  `SYNCTROPY_URL` + `SYNCTROPY_TOKEN`. 13 actions: health, overview, agents (list / get /
+  create / rotate token / delete), feed, events, routes, audit, settings (get / update
+  `default_account`). Strict argument validation, ids checked before entering URL paths,
+  bounded list output. `delete_agent` matches a `delete_*` approval rule.
+
+---
+
 ## 2026-07-30 — security audit + MCP prompts
 
 ### ⚠️ Breaking

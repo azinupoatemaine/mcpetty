@@ -7,6 +7,7 @@ import * as wazuh       from './wazuh'
 import * as firefly     from './firefly'
 import * as sophos      from './sophos'
 import * as paperless   from './paperless'
+import * as synctropy   from './synctropy'
 import * as mcpettyMeta from './mcpetty-meta'
 
 // Which instances the caller is allowed to see. Only handlers that report on MCPetty
@@ -62,6 +63,11 @@ export const NATIVE: Record<string, NativeHandler> = {
     tools: paperless.TOOLS,
     ping:  paperless.ping,
     call:  paperless.call,
+  },
+  synctropy: {
+    tools: synctropy.TOOLS,
+    ping:  synctropy.ping,
+    call:  synctropy.call,
   },
   mcpetty: {
     tools: mcpettyMeta.TOOLS,

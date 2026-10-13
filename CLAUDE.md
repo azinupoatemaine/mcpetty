@@ -20,6 +20,7 @@ Self-hosted MCP dashboard. One Docker container. MCPs run as native handlers. Al
 | `src/lib/native/index.ts` | Registry of native handlers (`NATIVE` map). `NativeHandler` interface defined here. |
 | `src/lib/native/wikijs.ts` | WikiJS — direct GraphQL calls, parameterized queries. |
 | `src/lib/native/portainer.ts` | Portainer — direct REST API calls with `X-API-Key`. |
+| `src/lib/native/synctropy.ts` | Synctropy agent console — 13 actions over the console REST API (`/api`, Bearer console token). `delete_agent` is gateable via a `delete_*` approval rule. |
 | `src/lib/native/sophos.ts` | Sophos Firewall — 41 actions over the SFOS XML API. Writes are gated. |
 | `src/lib/native/sophos-xml.ts` | SFOS XML protocol: envelope build, hand-written parser, status mapping, redaction, `isMutating`, `diffHash`. |
 | `src/lib/native/sophos-catalog.ts` | Verified SFOS tag catalog (18 tags) + record helpers. |
@@ -455,6 +456,16 @@ to an LLM, inside a product whose whole job is holding credentials.
 
 Firefly III, n8n, Sophos Firewall and Paperless-NGX are already shipped (`native/firefly.ts`,
 `native/sophos.ts`, `native/paperless.ts`; n8n as an `http-proxy` catalog entry).
+
+**Synctropy** (`native/synctropy.ts`) hosts the agent console's REST API (credentials
+`SYNCTROPY_URL`, `SYNCTROPY_TOKEN` = console token). Actions: get_health, get_overview,
+list_agents, get_agent, create_agent, rotate_agent_token, delete_agent, list_feed,
+list_events, list_routes, list_audit, get_settings, update_setting (only `default_account`).
+`update_agent` is not offered — the console has no agent update endpoint. Ids are validated
+against `^[a-z0-9_-]{1,32}$` before entering a URL path. `create_agent` and
+`rotate_agent_token` return a one-time agent token in the result. Approval rules are
+per-instance and matched as globs on the action name, so add `delete_*` to the instance to
+gate `delete_agent`.
 
 **Paperless-NGX** (`native/paperless.ts`) combines the best of three community MCP servers
 (`nloui/paperless-mcp`, `barryw/PaperlessMCP`, `cubinet-code/paperless-ngx-mcp`) into one

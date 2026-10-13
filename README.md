@@ -80,6 +80,7 @@ Change these immediately.
 | **Karakeep** | Bookmarks — save, search, tag, organise | Native |
 | **Proxmox VE** | VMs, containers, snapshots, backups, storage, cluster | Native |
 | **Wazuh** | Agents, alerts, vulnerabilities, SCA, FIM, active response | Native |
+| **Synctropy** | Agent console — agents and tokens, feed, events, routes, audit, settings | Native |
 | **Home Assistant** | Smart home control, automations, media players, scenes | HTTP Proxy |
 
 **Multi-instance**: every MCP type can be installed multiple times with different credentials. Two Portainer servers, three WikiJS instances — each appears as its own tool to your agent.

@@ -141,6 +141,16 @@ export const CATALOG: CatalogEntry[] = [
     ],
   },
   {
+    id:          'synctropy',
+    name:        'Synctropy',
+    description: 'Synctropy agent console — agents and their tokens, activity feed, events, routes, audit log, and settings. Deleting an agent is destructive; gate it with a delete_* approval rule.',
+    transport:   'native',
+    credentials: [
+      { key: 'SYNCTROPY_URL',   label: 'Synctropy URL',  description: 'Base URL of the console backend e.g. http://10.10.10.22:8480', type: 'url',    required: true },
+      { key: 'SYNCTROPY_TOKEN', label: 'Console Token',  description: 'Console token sent as Authorization: Bearer (CONSOLE_TOKEN)',    type: 'secret', required: true },
+    ],
+  },
+  {
     id:          'custom',
     name:        'Any Remote MCP',
     description: 'A remote MCP server of your own. Point MCPetty at any Streamable HTTP endpoint and it gains tool filters, approvals, namespaces and telemetry.',

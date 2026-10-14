@@ -62,7 +62,7 @@ const SESSION_TTL     = 30 * 60 * 1000
 
 // ── Protocol ──────────────────────────────────────────────────────────────────
 
-export const SUPPORTED_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18']
+export const SUPPORTED_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25']
 export const LATEST_PROTOCOL_VERSION     = '2025-06-18'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -172,8 +172,11 @@ export function checkOrigin(req: NextRequest): boolean {
 export function checkProtocolVersion(req: NextRequest): { ok: boolean; version: string } {
   const header = req.headers.get('mcp-protocol-version')
   if (!header) return { ok: true, version: '2025-03-26' }
-  if (!SUPPORTED_PROTOCOL_VERSIONS.includes(header)) return { ok: false, version: header }
-  return { ok: true, version: header }
+  if (SUPPORTED_PROTOCOL_VERSIONS.includes(header)) return { ok: true, version: header }
+  // A client newer than this server: `initialize` answers with the version we speak and the client downgrades.
+  // Rejecting here made such clients (Hermes sends 2025-11-25 on the first POST) fail before they could negotiate.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(header) && header > LATEST_PROTOCOL_VERSION) return { ok: true, version: LATEST_PROTOCOL_VERSION }
+  return { ok: false, version: header }
 }
 
 // ── JSON-RPC helpers ──────────────────────────────────────────────────────────
